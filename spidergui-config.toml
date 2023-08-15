@@ -1,0 +1,107 @@
+[general]
+    data_path = "/mnt/datadrive/DATA"
+
+[[component]]
+    type="ImageViewer"
+    name = "Image Viewer"
+ 
+[[component]]
+    type="ImageViewer"
+    name = "Image Viewer 2"
+
+    
+[[component]]
+    type="ImageViewer"
+    name = "Image Viewer 3"
+
+[[component]]
+    type = "ImageFeed"
+    name = "GoldEye"
+    input-channel = "aeron:ipc"
+    input-stream = 1003
+    auto_show = true
+
+
+[[component]]
+    type="ImageFeed"
+    name="CRED2"
+    input-channel="aeron:ipc"
+    input-stream=1001
+    auto_show = true
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+
+
+
+
+[[component]]
+    type="ImageFeed"
+    name="Fringed"
+    input-channel="aeron:ipc"
+    input-stream=5001
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+[[component]]
+    type="ImageFeed"
+    name="Un-Fringed"
+    input-channel="aeron:ipc"
+    input-stream=5002
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+[[component]]
+    type="ImageFeed"
+    name="Differential"
+    input-channel="aeron:ipc"
+    input-stream=5003
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+
+[[component]]
+    type="DMFeed"
+    name="LOWFS Residual"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=2001
+    auto_show = true
+
+[[component]]
+    type="DMFeed"
+    name="LOWFS Output"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=3001
+    auto_show = true
+
+
+[[component]]
+    type="DMFeed"
+    name="Fancy DM Output"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=1002
+    auto_show = true
+
+[[component]]
+    type="DMFeed"
+    name="DM Offset"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=1005
+    auto_show = true
+
