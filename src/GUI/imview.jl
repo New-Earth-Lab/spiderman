@@ -33,6 +33,17 @@ function imviewgui(path_or_arr; action="=", name="buffer")
 end
 export imviewgui
 
+# Super speedy "hash" function to detect if contents have changed.
+function myhash(buffer)
+    if isnothing(buffer)
+        objectid(buffer)
+    elseif length(buffer) == 1
+        sum(objectid(buffer) .* buffer)
+    else
+        objectid(buffer) * std(buffer[range(start=begin,stop=end,step=max(1,round(Int, end÷100)))])
+    end
+end
+
 function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_size=(380,300))
 
     browser = nothing
@@ -53,27 +64,30 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
     # cmap = LibCImPlot.ImPlotColormap_Plasma
     cmap = ImPlot.ImPlotColormap_Plasma
     # cbdrag_initial_limits = ImPlot.GetPlotLimits()
-
+    wasmousedown = false
     cmaps = [
-        (:ImPlotColormap_BrBG, "BrBG"),
-        (:ImPlotColormap_Cool, "Cool"),
-        # (:ImPlotColormap_Dark, "Dark"),
-        # (:ImPlotColormap_Deep, "Deep"),
-        (:ImPlotColormap_Greys, "Greys"),
-        (:ImPlotColormap_Hot, "Hot"),
-        (:ImPlotColormap_Jet, "Jet"),
-        # (:ImPlotColormap_Paired, "Paired"),
-        # (:ImPlotColormap_Pastel, "Pastel"),
-        (:ImPlotColormap_Pink, "Pink"),
-        (:ImPlotColormap_PiYG, "PiYG"),
-        (:ImPlotColormap_Plasma, "Plasma (default)"),
-        (:ImPlotColormap_RdBu, "RdBu"),
-        (:ImPlotColormap_Spectral, "Spectral"),
-        (:ImPlotColormap_Twilight, "Twilight"),
-        (:ImPlotColormap_Viridis, "Viridis"),
+        (ImPlot.ImPlotColormap_BrBG, "BrBG"),
+        (ImPlot.ImPlotColormap_Cool, "Cool"),
+        # (ImPlot.ImPlotColormap_Dark, "Dark"),
+        # (ImPlot.ImPlotColormap_Deep, "Deep"),
+        (ImPlot.ImPlotColormap_Greys, "Greys"),
+        (ImPlot.ImPlotColormap_Hot, "Hot"),
+        (ImPlot.ImPlotColormap_Jet, "Jet"),
+        # (ImPlot.ImPlotColormap_Paired, "Paired"),
+        # (ImPlot.ImPlotColormap_Pastel, "Pastel"),
+        (ImPlot.ImPlotColormap_Pink, "Pink"),
+        (ImPlot.ImPlotColormap_PiYG, "PiYG"),
+        (ImPlot.ImPlotColormap_Plasma, "Plasma (default)"),
+        (ImPlot.ImPlotColormap_RdBu, "RdBu"),
+        (ImPlot.ImPlotColormap_Spectral, "Spectral"),
+        (ImPlot.ImPlotColormap_Twilight, "Twilight"),
+        (ImPlot.ImPlotColormap_Viridis, "Viridis"),
     ]
 
-    hash_loaded = hash(0)
+    plotquery = nothing
+    show_query_statistics = false
+
+    hash_loaded = myhash(0)
 
     function draw(component, visible)
         local send_input, send_action, send_name
@@ -128,7 +142,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             end
         end
         if !isnothing(newimage)
-            hash_loaded = hash(image)
+            hash_loaded = myhash(image)
             newimage = view(newimage, :, reverse(axes(newimage,2)), [(:) for _ in axes(newimage)[3:end]]...)
             if length(size(newimage)) > 6
                 @error "Cubes with more than 6 dimensions are not supported. (This is crazy!)"
@@ -226,6 +240,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                 return
             end
         else
+            CImGui.SetNextWindowSize((350,350), CImGui.ImGuiCond_FirstUseEver)
             CImGui.SetNextWindowSizeConstraints(ImVec2(300,300), ImVec2(1920,1080), winsizecallback_c)
             if !CImGui.Begin(component_config["name"], visible, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar)
                 return
@@ -278,18 +293,16 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                 end
                 CImGui.EndMenu()
             end
-            # if CImGui.BeginMenu("View")
-                if CImGui.BeginMenu("Colour")
-                    for (cmapkey, cmapname) in cmaps
-                        if CImGui.MenuItem(cmapname)
-                            cmap = getproperty(ImPlot, cmapkey)
-                        end
+            if CImGui.BeginMenu("Colour")
+                for (cmapkey, cmapname) in cmaps
+                    if CImGui.MenuItem(cmapname)
+                        cmap = cmapkey
                     end
-                    CImGui.EndMenu()
                 end
-                # CImGui.EndMenu()
-            # end
+                CImGui.EndMenu()
+            end
             if !ischild && CImGui.BeginMenu("Transform")
+                CImGui.Text("(disables live updates)")
                 if CImGui.MenuItem("FFT") && !isnothing(buffer)
                     image = abs.(fftshift(fft(image,(1,2)),(1,2)))
                     buffer .= image[:,:,slice_position...]
@@ -316,6 +329,30 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                 end
                 CImGui.EndMenu()
             end
+            if CImGui.BeginMenu("Query Region")
+                pq = Ref(!isnothing(plotquery))
+                if CImGui.Checkbox("Show region",pq)
+                    if pq[] && !isnothing(image)
+                        plotquery = (
+                            xmin = mean(axes(image, 1))*0.8,
+                            xmax = mean(axes(image, 1))*1.2,
+                            ymin = mean(axes(image, 2))*0.8,
+                            ymax = mean(axes(image, 2))*1.2,
+                        )
+                    else
+                        plotquery = nothing
+                    end
+                end
+                pq = Ref(show_query_statistics)
+                if CImGui.Checkbox("Show statistics",pq)  && !isnothing(plotquery)
+                    show_query_statistics = pq[]
+                end 
+                if CImGui.MenuItem("Send cutout to main viewer") && !isnothing(plotquery)
+                    queryregion = queryview(image, plotquery, slice_position)
+                    imviewgui(queryregion, name="cutout")
+                end
+                CImGui.EndMenu()
+            end
             CImGui.EndMenuBar()
         end
 
@@ -336,9 +373,12 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             end
         end
 
-        w = CImGui.GetWindowContentRegionWidth()-80
-        # h = CImGui.GetWindowContentRegionWidth() - 50 - 25*(length(axes(image))-2)
-        h = CImGui.GetWindowContentRegionWidth()/size(image,1)*size(image,2)
+        w = CImGui.GetWindowWidth()-100
+        h = CImGui.GetWindowHeight()-160 - 30*(length(axes(image))-2)
+        if ischild 
+            h += 50
+        end
+        # h = CImGui.GetWindowContentRegionWidth()/size(image,1)*size(image,2)
         plotsize = ImVec2(w,h)
 
         CImGui.PushItemWidth(-80)
@@ -350,26 +390,24 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                 axis_changed |= CImGui.SliderInt("Axis $slicenum", pointer(slice_position, slicenum-2), 1, l)
             end
         end
-        if axis_changed || hash(vec(image)) != hash_loaded
+        if axis_changed || myhash(vec(image)) != hash_loaded
             buffer .= image[:,:,slice_position...]
             buffer[.! isfinite.(buffer)] .= 0
         end
         CImGui.PopItemWidth()
 
-        # if iscbdrag
-        #     ImPlot.SetNextPlotLimits(cbdrag_initial_limits, ? ImGuiCond_Always : ImGuiCond_Once)
-        ImPlot.SetNextPlotLimits(0,size(buffer,1),0,size(buffer,2),buffer_changed ? ImGuiCond_Always : ImGuiCond_Once)
-        # ImPlot.SetNextPlotLimits(0,size(buffer,1),0,size(buffer,2),ImGuiCond_Always)
+        # ImPlot.SetNextPlotLimits(0,size(buffer,1),0,size(buffer,2),buffer_changed ? ImGuiCond_Always : ImGuiCond_Once)
+        
         bounds_min = ImPlot.ImPlotPoint(0.0,0.0)
         bounds_max = ImPlot.ImPlotPoint(size(buffer)...)
-        plot_flags = ImPlot.ImPlotFlags_Equal  | ImPlot.ImPlotFlags_Crosshairs | ImPlot.ImPlotFlags_Query
+        plot_flags = ImPlot.ImPlotFlags_Equal  | ImPlot.ImPlotFlags_Crosshairs
         winhovered = CImGui.IsWindowHovered() # must be before beginplot
-        plotquery = nothing
+
         if ImPlot.BeginPlot(
             "", "", "",plotsize, 
             flags=ImPlot.ImPlotFlags(plot_flags),
-            x_flags=ImPlot.ImPlotAxisFlags(ImPlot.ImPlotAxisFlags_NoLabel),#ImPlot.ImPlotAxisFlags_None|ImPlot.ImPlotAxisFlags_NoDecorations),
-            y_flags=ImPlot.ImPlotAxisFlags(ImPlot.ImPlotAxisFlags_NoLabel)
+            # x_flags=ImPlot.ImPlotAxisFlags(ImPlot.ImPlotAxisFlags_NoLabel),#ImPlot.ImPlotAxisFlags_None|ImPlot.ImPlotAxisFlags_NoDecorations),
+            # y_flags=ImPlot.ImPlotAxisFlags(ImPlot.ImPlotAxisFlags_NoLabel)
         )
             over_cb = winhovered && 
                 CImGui.GetMousePos().x - CImGui.GetWindowPos().x > w &&
@@ -391,7 +429,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                 dx  = delta.y
                 dy  = delta.x
                 # Account for contrast scaling and offset scaling
-                stepscale = 2*abs(cbdrag_cmax - cbdrag_cmin)/CImGui.GetWindowContentRegionWidth()
+                stepscale = 2*abs(cbdrag_cmax - cbdrag_cmin)/CImGui.GetWindowHeight()
 
                 startval = cbdrag_cmin + dx*stepscale
                 endval = cbdrag_cmax + dx*stepscale
@@ -408,46 +446,82 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
     
             end
 
+            axis_flags = ImPlot.ImPlotAxisFlags_NoLabel | ImPlot.ImPlotAxisFlags_AutoFit
+            if buffer_changed
+                axis_cond = ImGuiCond_Always
+            else
+                axis_cond = ImGuiCond_Once
+            end
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "")
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "")
+            ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(buffer,1)), axis_cond)
+            ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(buffer,2)), axis_cond)
+            # ImPlot.PlotHeatmap(vec(actuator_nm),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; label_fmt=C_NULL)
+            ImPlot.SetupFinish()
+
+
             ImPlot.PushColormap(cmap)
-            ImPlot.PlotHeatmap(reshape(buffer,:),reverse(size(buffer))...,cmin[],cmax[]; label_fmt=C_NULL, bounds_min=bounds_min, bounds_max=bounds_max)
+            ImPlot.PlotHeatmap(vec(buffer),reverse(size(buffer))...,cmin[],cmax[]; label_fmt=C_NULL, bounds_min=bounds_min, bounds_max=bounds_max)
             ImPlot.PopColormap()
 
-            if ImPlot.IsPlotQueried()
-                q = ImPlot.GetPlotQuery()
-                plotquery = (;
-                    xmin = q.X.Min,
-                    xmax = q.X.Max,
-                    ymin = q.Y.Min,
-                    ymax = q.Y.Max
-                )
+            if !isnothing(plotquery)
+
+                # User-selectable region for statistics
+                xmin = Ref(plotquery.xmin)
+                ymin = Ref(plotquery.ymin)
+                xmax = Ref(plotquery.xmax)
+                ymax = Ref(plotquery.ymax)
+                ImPlot.DragRect(0,xmin,ymin,xmax,ymax,ImVec4(1,1,1,1))
+                if wasmousedown && !CImGui.IsMouseDown(0) #,flags, &clicked, &hovered, &held);
+                    # Make sure bounds adapt to show rounded positions to make it very clear which
+                    # pixels are included
+                    xmin[] = round(Int, xmin[])
+                    xmax[] = round(Int, xmax[])
+                    ymax[] = round(Int, ymax[])
+                    ymin[] = round(Int, ymin[])
+                end
+
+                # Query annotation
+                xmin = xmin[]
+                ymin = ymin[]
+                xmax = xmax[]
+                ymax = ymax[]
+                if xmin > xmax
+                    xmin, xmax = xmax, xmin
+                end
+                if ymin > ymax
+                    ymin, ymax = ymax, ymin
+                end
+                if abs(xmin - xmax) < 1
+                    xmax += 1
+                end
+                if abs(ymin - ymax) < 1
+                    ymax += 1
+                end
+                plotquery = (;xmin,xmax,ymin,ymax)
+
+
+                if show_query_statistics
+                    queryregion = queryview(image, plotquery, slice_position)
+                    # Not working as expected, have to do it manually
+                    # ImPlot.Annotation(0.5,0.5,ImVec4(1,1,1,1),ImVec2(0,0),false,)
+                    ccall((:ImPlot_Annotation_Str, LibCImGui.libcimgui), Cvoid,
+                        (Cdouble, Cdouble, ImVec4, ImVec2, Bool, Cstring),
+                        plotquery.xmin, plotquery.ymax, ImVec4(1,1,1,0.75),ImVec2(0,-15), true, show_queryregion_statistics(queryregion))
+                end
             end
+
             ImPlot.EndPlot()
         end
         CImGui.SameLine();
-        ImPlot.ColormapScale("##cmap", cmin[], cmax[], ImVec2(80,h), cmap);
+        ImPlot.ColormapScale("##cmap", cmin[], cmax[], ImVec2(80,h), "%g", ImPlot.ImPlotColormapScaleFlags_None, cmap);
 
-        if !ischild
-            CImGui.Text("Left drag colour bar for brightness/contrast.")
-            CImGui.Text("Left drag image to pan. Scroll or right-drag image to zoom.")
-            CImGui.Text("Ctrl & right drag to query. Double click to reset.")
-        end
-        if isnothing(plotquery)
-            queryregion = view(image, :, :, slice_position...)
-        else
-            queryregion = @view image[
-                max(begin,round(Int, plotquery.xmin)):min(end, round(Int, plotquery.xmax)),
-                max(begin,round(Int, end-plotquery.ymax)):min(end, round(Int, end-plotquery.ymin)),
-                slice_position...
-            ]
-            if length(queryregion) == 0
-                queryregion = image
-            end
-        end
-        if length(queryregion) > 0
-            # show_queryregion_statistics(queryregion)
-        end
+        CImGui.Text("Left drag colour bar for brightness/contrast.")
+        CImGui.Text("Left drag image to pan. Scroll or right-drag image to zoom.")
+        CImGui.Text("Ctrl & right drag to query. Double click to reset.")
 
         ischild ? CImGui.EndChild() : CImGui.End()
+        wasmousedown = CImGui.IsMouseDown(0)
 
         return 
     end
@@ -455,12 +529,15 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
 end
 
 function show_queryregion_statistics(queryregion)
+    if length(queryregion) == 0 
+        return "no data"
+    end
     qmin, qmax = extrema(queryregion)
     qmean = mean(queryregion)
     qstd = std(queryregion,mean=qmean)
-    CImGui.Text(@sprintf(
-        "Query: min=%8.3g max=%8.3g mean=%8.3g std=%8.3g", qmin, qmax, qmean, qstd
-    ))
+    @sprintf(
+        "region statistics\nmin=%3g\nmax=%3g\nmean=%3g\nstd=%3g", qmin, qmax, qmean, qstd
+    )
 end
 
 function filebrowse(filepattern=r"\.fits|.fits.gz$";current_directory=config("general", "data_path"),name="")
@@ -552,3 +629,13 @@ function winsizecallback4(sizedata_ptr)
     return
 end
 winsizecallback_c = @cfunction(winsizecallback4, Cvoid, (Ptr{LibCImGui.ImGuiSizeCallbackData},))
+
+
+
+function queryview(image, plotquery, slice_position)
+    return @view image[
+        max(1,round(Int,plotquery.xmin+1)):min(size(image,1), round(Int,plotquery.xmax)),
+        max(1,round(Int,size(image,2)-plotquery.ymax+1)):min(size(image,2), round(Int,size(image,2)-plotquery.ymin)),
+        slice_position...
+    ]
+end

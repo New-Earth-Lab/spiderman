@@ -22,50 +22,50 @@
     auto_show = true
 
 
-[[component]]
-    type="ImageFeed"
-    name="CRED2"
-    input-channel="aeron:ipc"
-    input-stream=1001
-    auto_show = true
+# [[component]]
+#     type="ImageFeed"
+#     name="CRED2"
+#     input-channel="aeron:ipc"
+#     input-stream=1001
+#     auto_show = true
 
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
-
-
+#     # crop = true
+#     # cropx = [147,467]
+#     # cropy = [67,387]
 
 
 
-[[component]]
-    type="ImageFeed"
-    name="Fringed"
-    input-channel="aeron:ipc"
-    input-stream=5001
 
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
 
-[[component]]
-    type="ImageFeed"
-    name="Un-Fringed"
-    input-channel="aeron:ipc"
-    input-stream=5002
+# [[component]]
+#     type="ImageFeed"
+#     name="Fringed"
+#     input-channel="aeron:ipc"
+#     input-stream=5001
 
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
+#     # crop = true
+#     # cropx = [147,467]
+#     # cropy = [67,387]
 
-[[component]]
-    type="ImageFeed"
-    name="Differential"
-    input-channel="aeron:ipc"
-    input-stream=5003
+# [[component]]
+#     type="ImageFeed"
+#     name="Un-Fringed"
+#     input-channel="aeron:ipc"
+#     input-stream=5002
 
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
+#     # crop = true
+#     # cropx = [147,467]
+#     # cropy = [67,387]
+
+# [[component]]
+#     type="ImageFeed"
+#     name="Differential"
+#     input-channel="aeron:ipc"
+#     input-stream=5003
+
+#     # crop = true
+#     # cropx = [147,467]
+#     # cropy = [67,387]
 
 
 [[component]]

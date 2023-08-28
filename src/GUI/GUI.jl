@@ -101,7 +101,6 @@ include("dm-feed.jl")
 include("dm-plot.jl")
 
 # Background for whole GUI
-# const clear_color = Cfloat[0.40392157, 0.45490196, 0.5411765, 1.0] #Cfloat[0.0, 0.15294117647058825, 0.25098039215686274, 1.00]
 const clear_color = Cfloat[0.2, 0.2, 0.2, 1.0] #Cfloat[0.0, 0.15294117647058825, 0.25098039215686274, 1.00]
 const good_color =  Cfloat[0.15294117647058825, 0.6588235294117647, 0.1607843137254902, 1.0, ]
 const dimmed_color = Cfloat[0.6, 0.6, 0.6, 1.0]

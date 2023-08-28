@@ -58,7 +58,7 @@ function writeconfig()
     data_path = config("general", "data_path")
     dir = joinpath(data_path, Dates.format(t, "Y-mm-dd"))
     fname = Dates.format(t, "HH.MM.SS.s") * ".config.toml"
-    @info "Writing sine waves to FITS cube." dir fname
+    @info "Writing current config file." dir fname
     mkpath(dir)
 
     converter(T::DataType) = string(T)

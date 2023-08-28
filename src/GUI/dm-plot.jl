@@ -1,7 +1,8 @@
+using ImPlot
 
 function plot_dm_commands(dm::DMFeed)
-    actuator_volts = fill(0f0, size(dm.actuator_map))
-    scale_amount=Ref(Cfloat(0.1))
+    actuator_nm = fill(0f0, size(dm.actuator_map))
+    scale_amount=Ref(Cfloat(100))
 
     sub_bestflat = Ref(true)
     sub_tt = Ref(true)
@@ -13,8 +14,9 @@ function plot_dm_commands(dm::DMFeed)
     # tilt_2 = dm.tiptilt(0.0, 1.0)
 
     function (commands)
-        actuator_volts .= commands
-        actuator_volts[.! dm.valid_actuator_map] .= Inf
+        actuator_nm .= commands .* 10 .* 1e3
+        rmsnm = sqrt(mean(px^2 for px in vec(actuator_nm)))
+        actuator_nm[.! dm.valid_actuator_map] .= Inf
         # Remove any user-requested modes
         # if sub_bestflat[]
         #     commands_local .-= dot(commands_local,dm.bestflat)/dot(dm.bestflat,dm.bestflat).*dm.bestflat
@@ -25,43 +27,54 @@ function plot_dm_commands(dm::DMFeed)
         #     commands_local .-= dot(commands_local,tilt_1)/dot(tilt_1,tilt_1).*tilt_1
         #     commands_local .-= dot(commands_local,tilt_2)/dot(tilt_2,tilt_2).*tilt_2
         # end 
-            
-        act_bounds_min = ImPlot.ImPlotPoint(0.0,0.0)
-        act_bounds_max = ImPlot.ImPlotPoint(size(commands)...)
-        ImPlot.SetNextPlotLimits(0,size(commands,1),0,size(commands,2),ImGuiCond_Always)
 
-        # w = CImGui.GetWindowContentRegionWidth()-80
-        # h = CImGui.GetWindowContentRegionWidth() - 50 
-        # d = min(w,h)
-        d = 200
+        w = CImGui.GetWindowWidth() -80
+        h = CImGui.GetWindowHeight() - 80
+        d = min(w,h)
         plotsize = ImVec2(d,d)
 
-        if ImPlot.BeginPlot("", "", "", plotsize, flags=ImPlot.ImPlotFlags_Equal, y_flags=ImPlotAxisFlags_NoDecorations, x_flags=ImPlotAxisFlags_NoDecorations)
-            ImPlot.PushColormap(ImPlot.LibCImPlot.ImPlotColormap_RdBu)
-            ImPlot.PlotHeatmap(@views(actuator_volts[:]),reverse(size(actuator_volts))...,-scale_amount[],scale_amount[]; bounds_min=act_bounds_min, bounds_max=act_bounds_max)
-            ImPlot.PopColormap()    
+        # if ImPlot.BeginPlot("", "", "", plotsize, flags=ImPlot.ImPlotFlags_Equal, y_flags=ImPlotAxisFlags_NoDecorations, x_flags=ImPlotAxisFlags_NoDecorations)
+        #     ImPlot.PushColormap(ImPlot.LibCImPlot.ImPlotColormap_RdBu)
+        #     ImPlot.PlotHeatmap(@views(actuator_nm[:]),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; bounds_min=act_bounds_min, bounds_max=act_bounds_max)
+        #     ImPlot.PopColormap()    
+        #     ImPlot.EndPlot()
+        # end
+
+        
+        if ImPlot.BeginPlot("", plotsize, ImPlot.ImPlotFlags_Crosshairs | ImPlot.ImPlotFlags_Equal)
+            cmap = ImPlot.ImPlotColormap_RdBu
+
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "", ImPlot.ImPlotAxisFlags_NoDecorations | ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "", ImPlot.ImPlotAxisFlags_NoDecorations | ImPlot.ImPlotAxisFlags_AutoFit)
+            # ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(commands,1)), ImGuiCond_Always)
+            # ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(commands,2)), ImGuiCond_Always)
+            ImPlot.PushColormap(cmap)
+            ImPlot.SetupFinish()
+            ImPlot.PlotHeatmap(vec(actuator_nm),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; label_fmt=C_NULL)
             ImPlot.EndPlot()
-        end
-        CImGui.SameLine();
-        ImPlot.ColormapScale("nm##cmap", -scale_amount[], scale_amount[], ImVec2(80,d), ImPlot.LibCImPlot.ImPlotColormap_RdBu);
+            ImPlot.PopColormap()
 
-        # DM commands auto-scale
-        scale_min = 0.00001f0
-        scale_amount_new = Float32(max(
-            abs(minimum(commands)),
-            maximum(commands),
-            scale_min,
-        ))
-        if scale_amount_new != scale_min
-            if scale_amount[] == Cfloat(0.1)
-                scale_amount[] = scale_amount_new
-            end    
-            scale_amount[] = scale_amount[] + 0.015(scale_amount_new - scale_amount[])
+            CImGui.SameLine();
+            ImPlot.ColormapScale("nm##cmap", -scale_amount[], scale_amount[], ImVec2(80,d), "%g", ImPlot.ImPlotColormapScaleFlags_None, cmap);
         end
 
-        CImGui.Text("Subtract:")
-        CImGui.SameLine()
-        CImGui.Text("(TODO)")
+        CImGui.Text(@sprintf("RMS: %.1f nm", rmsnm))
+
+
+        # # DM commands auto-scale
+        # scale_min = 0.00001f0
+        # scale_amount_new = Float32(max(
+        #     abs(minimum(actuator_nm)),
+        #     maximum(actuator_nm),
+        #     scale_min,
+        # ))
+        # if scale_amount_new != scale_min
+        #     if scale_amount[] == Cfloat(0.1)
+        #         scale_amount[] = scale_amount_new
+        #     end    
+        #     scale_amount[] = scale_amount[] + 0.015(scale_amount_new - scale_amount[])
+        # end
+
         # CImGui.Checkbox("best flat##checkbox", sub_bestflat)
         # CImGui.SameLine()
         # CImGui.Checkbox("tip/tilt##checkbox", sub_tt)
