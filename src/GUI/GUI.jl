@@ -99,6 +99,7 @@ include("imview.jl")
 include("image-feed.jl")
 include("dm-feed.jl")
 include("dm-plot.jl")
+include("dm-offset-tool.jl")
 
 # Background for whole GUI
 const clear_color = Cfloat[0.2, 0.2, 0.2, 1.0] #Cfloat[0.0, 0.15294117647058825, 0.25098039215686274, 1.00]

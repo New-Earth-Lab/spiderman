@@ -27,7 +27,7 @@ function imviewgui(path_or_arr; action="=", name="buffer")
         viewer.new_contents = path_or_arr
         viewer.new_action = action
         viewer.new_name = name
-        showcomponent(name(viewer))
+        showcomponent(SpiderGUI.name(viewer))
     end
     return nothing
 end
@@ -249,8 +249,8 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
 
         # Power and connect buttons are in the menu bar
         if CImGui.BeginMenuBar()
-            if !ischild && CImGui.BeginMenu("File")
-                if CImGui.MenuItem("Open...")
+            if CImGui.BeginMenu("File")
+                if !ischild && CImGui.MenuItem("Open...")
                     browser = filebrowse(r"\.fits|.fits.gz$",name=component_config["name"])
                 end
                 if CImGui.MenuItem("Send to DS9")
@@ -374,7 +374,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
         end
 
         w = CImGui.GetWindowWidth()-100
-        h = CImGui.GetWindowHeight()-160 - 30*(length(axes(image))-2)
+        h = CImGui.GetWindowHeight()-130 - 30*(length(axes(image))-2)
         if ischild 
             h += 50
         end
@@ -518,7 +518,6 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
 
         CImGui.Text("Left drag colour bar for brightness/contrast.")
         CImGui.Text("Left drag image to pan. Scroll or right-drag image to zoom.")
-        CImGui.Text("Ctrl & right drag to query. Double click to reset.")
 
         ischild ? CImGui.EndChild() : CImGui.End()
         wasmousedown = CImGui.IsMouseDown(0)
@@ -540,7 +539,7 @@ function show_queryregion_statistics(queryregion)
     )
 end
 
-function filebrowse(filepattern=r"\.fits|.fits.gz$";current_directory=config("general", "data_path"),name="")
+function filebrowse(filepattern=r"\.fit|\.fits|\.fit.gz|\.fits.gz$";current_directory=config("general", "data_path"),name="")
 
     getdir(path) = filter(reverse(readdir(path))) do fname
         perm_allowed = true

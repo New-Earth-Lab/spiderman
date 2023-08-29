@@ -16,56 +16,72 @@
 
 [[component]]
     type = "ImageFeed"
-    name = "GoldEye"
+    name = "GoldEye (uncalibrated)"
     input-channel = "aeron:ipc"
     input-stream = 1003
+    auto_show = false
+
+[[component]]
+    type = "ImageFeed"
+    name = "GoldEye"
+    input-channel = "aeron:ipc"
+    input-stream = 1013
     auto_show = true
 
 
-# [[component]]
-#     type="ImageFeed"
-#     name="CRED2"
-#     input-channel="aeron:ipc"
-#     input-stream=1001
-#     auto_show = true
+[[component]]
+    type="ImageFeed"
+    name="CRED2 (uncalibrated)"
+    input-channel="aeron:ipc"
+    input-stream=1001
+    auto_show = false
 
-#     # crop = true
-#     # cropx = [147,467]
-#     # cropy = [67,387]
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+[[component]]
+    type="ImageFeed"
+    name="CRED2"
+    input-channel="aeron:ipc"
+    input-stream=1011
+    auto_show = true
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
 
 
 
+[[component]]
+    type="ImageFeed"
+    name="Fringed"
+    input-channel="aeron:ipc"
+    input-stream=5001
 
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
 
-# [[component]]
-#     type="ImageFeed"
-#     name="Fringed"
-#     input-channel="aeron:ipc"
-#     input-stream=5001
+[[component]]
+    type="ImageFeed"
+    name="Un-Fringed"
+    input-channel="aeron:ipc"
+    input-stream=5002
 
-#     # crop = true
-#     # cropx = [147,467]
-#     # cropy = [67,387]
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
 
-# [[component]]
-#     type="ImageFeed"
-#     name="Un-Fringed"
-#     input-channel="aeron:ipc"
-#     input-stream=5002
+[[component]]
+    type="ImageFeed"
+    name="Differential"
+    input-channel="aeron:ipc"
+    input-stream=5003
 
-#     # crop = true
-#     # cropx = [147,467]
-#     # cropy = [67,387]
-
-# [[component]]
-#     type="ImageFeed"
-#     name="Differential"
-#     input-channel="aeron:ipc"
-#     input-stream=5003
-
-#     # crop = true
-#     # cropx = [147,467]
-#     # cropy = [67,387]
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
 
 
 [[component]]
@@ -89,10 +105,10 @@
 
 [[component]]
     type="DMFeed"
-    name="Fancy DM Output"
+    name="DM Mixer Output"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
-    input-channel="aeron:ipc"
+    input-channel="aeron:udp?endpoint=localhost:20121"
     input-stream=1002
     auto_show = true
 
@@ -103,5 +119,14 @@
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     input-channel="aeron:ipc"
     input-stream=1005
+    auto_show = true
+
+
+[[component]]
+    type="DMOffsetTool1"
+    name="DM Offset Tool 1"
+    modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    output-channel="aeron:ipc"
+    output-stream=1005
     auto_show = true
 

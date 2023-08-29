@@ -17,6 +17,9 @@ include("Components.jl")
 # GUI for optionally controlling it all.
 include("GUI/GUI.jl")
 
+include("ds9show.jl")
+
+
 
 const gui_logger = Ref{GuiLogger}(GuiLogger(1))
 const flush_log = Ref{Function}(identity)
