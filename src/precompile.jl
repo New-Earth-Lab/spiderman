@@ -12,6 +12,8 @@ using Aeron
         # Ensure we don't keep our current list of components compiled into the package-image.
         empty!(config_components)
         config_loaded[] = false
+        global loaded_config_toml
+        loaded_config_toml = nothing
         empty!(active_components)
     end
 end
