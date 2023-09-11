@@ -4,6 +4,7 @@ mutable struct ImageFeed
     const aeron_config::AeronConfig
     const aeron_watch_handle::Aeron.AeronWatchHandle
     last_img::Matrix{Float32}
+    first_view::Bool
 end
 function ImageFeed(conf)
     aeron_config = AeronConfig(conf["input-channel"], conf["input-stream"])
@@ -20,11 +21,12 @@ function ImageFeed(conf)
         if size(feed.last_img) != size(image)
             @info "New image feed dimensions received"
             feed.last_img = Float32.(image)
+            feed.first_view = true
         else
             feed.last_img .= image
         end
     end
-    feed = ImageFeed(conf["name"], aeron_config, watch_handle, zeros(Float32, 0, 0))
+    feed = ImageFeed(conf["name"], aeron_config, watch_handle, zeros(Float32, 0, 0), true)
 
     return feed
 end
@@ -44,7 +46,7 @@ function gui_panel(::Type{ImageFeed}, component_config)
         "name"=>component_config["name"]
     ); ischild=true, child_size=(-1,-30))
 
-    first_view = true
+    first_view_0 = false
 
     function draw(image_feed, visible)
         # Only do work assembling incoming messages if the panel is visible
@@ -56,12 +58,13 @@ function gui_panel(::Type{ImageFeed}, component_config)
         if !CImGui.Begin(component_config["name"], visible)#, ImGuiWindowFlags_MenuBar)
             return
         end
-        if first_view
+        if image_feed.first_view || first_view_0
             child_imview.new_contents = image_feed.last_img
             child_imview.new_action = "="
             child_imview.new_name = "image feed"
         end
-        first_view = false
+        first_view_0 = image_feed.first_view = false
+        
 
         if !isnothing(err_msg)
             CImGui.TextColored(bad_color, "ERROR:")
