@@ -14,14 +14,15 @@ function DMFeed(conf)
     valid_actuator_map = BitMatrix(load(conf["valid-actuator-map"]))
 
     subscription = Aeron.subscribe(aeron_config)
+
+    last_cmd_map = zeros(Float32, size(actuator_map))
+
     watch_handle = Aeron.watch(subscription) do frame
         header = VenomsWireFormat(frame.buffer)
-
         # @info "Message received" SizeX(header) SizeY(header) TimestampNs(header)
         # display(header)
         image = Image(header)
-
-        feed.last_cmd_map[feed.actuator_map] .= vec(image)
+        last_cmd_map[actuator_map] .= vec(image)
     end
     feed = DMFeed(
         conf["name"],
@@ -29,7 +30,7 @@ function DMFeed(conf)
         watch_handle,
         actuator_map,
         valid_actuator_map,
-        zeros(Float32, size(actuator_map))
+        last_cmd_map
     )
 
     return feed

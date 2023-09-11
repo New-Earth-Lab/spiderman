@@ -77,8 +77,7 @@ function gui_panel(::Type{DMOffsetTool1}, component_config)
 
     modenames = [
         "Focus",
-        "Astig 1",
-        "Astig 2"
+        #TODO : Wyant numbering
     ]
 
     function draw(dmoff, visible)

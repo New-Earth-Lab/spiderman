@@ -13,7 +13,7 @@ loaded_config_toml_lock = ReentrantLock()
 function config(keys...; refresh=false)
     # Load config file upon first request for a parameter
     @lock loaded_config_toml_lock if isnothing(loaded_config_toml) || refresh
-        global loaded_config_toml = TOML.parsefile(joinpath(@__DIR__, "..", "spidergui-config.toml"))
+        global loaded_config_toml = TOML.parsefile(joinpath(@__DIR__, "..", "spiderman-config.toml"))
     end
     dict = loaded_config_toml
     for key in keys

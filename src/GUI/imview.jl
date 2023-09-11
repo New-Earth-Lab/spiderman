@@ -27,7 +27,7 @@ function imviewgui(path_or_arr; action="=", name="buffer")
         viewer.new_contents = path_or_arr
         viewer.new_action = action
         viewer.new_name = name
-        showcomponent(SpiderGUI.name(viewer))
+        showcomponent(SpiderMan.name(viewer))
     end
     return nothing
 end

@@ -1,7 +1,7 @@
 """
 This is the top level file for all of the lab software.
 """
-module SpiderGUI
+module SpiderMan
 using TOML
 
 include("config-io.jl")
@@ -14,15 +14,16 @@ include("wire-format.jl")
 # Component system
 include("Components.jl")
 
+
+const gui_logger = Ref{GuiLogger}(GuiLogger(1))
+const flush_log = Ref{Function}(identity)
+
 # GUI for optionally controlling it all.
 include("GUI/GUI.jl")
 
 include("ds9show.jl")
 
-
-
-const gui_logger = Ref{GuiLogger}(GuiLogger(1))
-const flush_log = Ref{Function}(identity)
+include("precompile.jl")
 
 function __init__()
 

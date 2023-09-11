@@ -130,14 +130,18 @@ Launch the main interface for the lab software.
 If `bg=true` (default), then it will run as a separate task
 allowing you to continue using the Julia
 prompt.
+
+Note: the precompilemode flag runs the GUI for just a few frames before closing.
+This allows us to precompile the startup workload (althrough the GUI does flash on the screen).
+This is not critical functionality.
 """
-function spiderman(;bg=true,_launch_waiter_event=Event())
+function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
 
     # Option to launch the GUI on a background thread
     if bg
 
         if gui_active[]
-            error("Cannot run two main GUIs silmultaneously. Close the existing window first. To force, set `SpiderGUI.gui_active[] = false`")
+            error("Cannot run two main GUIs silmultaneously. Close the existing window first. To force, set `SpiderMan.gui_active[] = false`")
         end
         
         # Before returning, wait on a task that finishes after first frame appears.
@@ -274,6 +278,11 @@ function spiderman(;bg=true,_launch_waiter_event=Event())
             # Notify that we are done launching the guitask
             if frame_i == 5
                 notify(_launch_waiter_event)
+            end
+            # If precompiling, break out as soon as we hit the main
+            # code paths.
+            if frame_i == 6 && precompilemode
+                return
             end
             # Main normal drawing loop
             frame_i += 1

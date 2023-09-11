@@ -1,4 +1,4 @@
-name = "SpiderGUI"
+name = "SpiderMan"
 uuid = "8b3c21a4-0b6b-4c74-bcc4-679d0c8105ea"
 
 [deps]
@@ -19,6 +19,7 @@ LibCImGui = "9be01004-c4f5-478b-abeb-cb32b114cf5e"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
