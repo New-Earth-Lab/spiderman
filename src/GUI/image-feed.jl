@@ -46,7 +46,7 @@ function gui_panel(::Type{ImageFeed}, component_config)
         "name"=>component_config["name"]
     ); ischild=true, child_size=(-1,-30))
 
-    first_view_0 = false
+    first_view_0 = true
 
     function draw(image_feed, visible)
         # Only do work assembling incoming messages if the panel is visible
