@@ -103,7 +103,7 @@ function gui_panel(::Type{DMOffsetTool1}, component_config)
             mode_amplitudes_nm_rms .= 0f0
         end
 
-        tt_range = Float32( dm_tt_coarse ? 50 : 5)
+        tt_range = Float32( dm_tt_coarse ? 750 : 150)
         CImGui.Text("Tip (nm RMS)")
         t = mode_amplitudes_nm_rms[1]
         changed |= @c CImGui.SliderFloat("##Tip", &t, -tt_range, tt_range)
