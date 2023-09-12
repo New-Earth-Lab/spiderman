@@ -55,17 +55,7 @@
 
 [[component]]
     type="ImageFeed"
-    name="Fringed"
-    input-channel="aeron:ipc"
-    input-stream=5001
-
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
-
-[[component]]
-    type="ImageFeed"
-    name="Un-Fringed"
+    name="CRED2: Fringed"
     input-channel="aeron:ipc"
     input-stream=5002
 
@@ -75,7 +65,17 @@
 
 [[component]]
     type="ImageFeed"
-    name="Differential"
+    name="CRED2: Un-Fringed"
+    input-channel="aeron:ipc"
+    input-stream=5001
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+[[component]]
+    type="ImageFeed"
+    name="CRED2: Differential"
     input-channel="aeron:ipc"
     input-stream=5003
 
