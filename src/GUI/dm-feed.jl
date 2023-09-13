@@ -53,7 +53,9 @@ function gui_panel(::Type{DMFeed}, component_config)
     function draw(dm_feed, visible)
         # Only do work assembling incoming messages if the panel is visible
         Aeron.active(dm_feed.aeron_watch_handle, visible[]) 
-        dm_feed.aeron_watch_handle.decimate_time = 1/60
+        # Not safe to decimate DM commands since they don't always come as continuous 
+        # high speed streams. We might miss the last one and not show an important command
+        dm_feed.aeron_watch_handle.decimate_time = 0
         CImGui.SetNextWindowSize((350,350), CImGui.ImGuiCond_FirstUseEver)
         if !CImGui.Begin(component_config["name"], visible)#, ImGuiWindowFlags_MenuBar)
             return
