@@ -130,3 +130,21 @@
     output-stream=1005
     auto_show = true
 
+
+[[component]]
+    type="TTMonitor"
+    name="LOWFS TT Monitor"
+    modes-to-actus="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    history-length=850
+    input-channel="aeron:ipc"
+    input-stream=3001
+    auto_show = false
+
+[[component]]
+    type="TTMonitor"
+    name="LOWFS TT Residual"
+    modes-to-actus="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    history-length=850
+    input-channel="aeron:ipc"
+    input-stream=2001
+    auto_show = false
