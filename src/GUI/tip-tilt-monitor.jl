@@ -62,6 +62,8 @@ function gui_panel(::Type{TTMonitor}, component_config)
     x = [0f0]
     y = [0f0]
 
+    ax = nothing
+
     function draw(ttmon, visible)
         # Only do work assembling incoming messages if the panel is visible
         Aeron.active(ttmon.aeron_watch_handle, visible[]) 
@@ -71,6 +73,9 @@ function gui_panel(::Type{TTMonitor}, component_config)
         CImGui.SetNextWindowSize((350,350), CImGui.ImGuiCond_FirstUseEver)
         if !CImGui.Begin(component_config["name"], visible)#, ImGuiWindowFlags_MenuBar)
             return
+        end
+        if first_view
+            ax = collect(Float32.(axes(ttmon.mode_history,1)))
         end
         first_view = false
         if !isnothing(err_msg)
@@ -83,18 +88,8 @@ function gui_panel(::Type{TTMonitor}, component_config)
         end
 
         w = CImGui.GetWindowWidth() - 10
-        h = CImGui.GetWindowHeight() - 10
-        # d = min(w,h)
-        # plotsize = ImVec2(d,d)
+        h = (CImGui.GetWindowHeight() - 40)/2
         plotsize = ImVec2(w,h)
-
-        # if ImPlot.BeginPlot("", "", "", plotsize, flags=ImPlot.ImPlotFlags_Equal, y_flags=ImPlotAxisFlags_NoDecorations, x_flags=ImPlotAxisFlags_NoDecorations)
-        #     ImPlot.PushColormap(ImPlot.LibCImPlot.ImPlotColormap_RdBu)
-        #     ImPlot.PlotHeatmap(@views(actuator_nm[:]),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; bounds_min=act_bounds_min, bounds_max=act_bounds_max)
-        #     ImPlot.PopColormap()    
-        #     ImPlot.EndPlot()
-        # end
-
         
         if ImPlot.BeginPlot(
             "##ttmon",
@@ -105,8 +100,6 @@ function gui_panel(::Type{TTMonitor}, component_config)
         )
             ImPlot.SetupAxis(ImPlot.ImAxis_X1, "tip")
             ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "tilt")
-            # ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(commands,1)), ImGuiCond_Always)
-            # ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(commands,2)), ImGuiCond_Always)
             ImPlot.SetupFinish()
             ImPlot.SetNextLineStyle(ImVec4(1f0, 1.f0, 1f0, 0.25f0););
             @views ImPlot.PlotLine("Integrated", ttmon.mode_history[:,1], ttmon.mode_history[:,2], size(ttmon.mode_history,1), 0, ttmon.counter[]);
@@ -118,9 +111,22 @@ function gui_panel(::Type{TTMonitor}, component_config)
             ImPlot.PopStyleVar();
 
             ImPlot.EndPlot()
+        end
+
+        if ImPlot.BeginPlot(
+            "##ttmon-timeseries",
+            plotsize,
+        )
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "time (iter)")
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "amplitude (arb.)")
+            ImPlot.SetupFinish()
+            @views ImPlot.PlotLine("tip", ax, ttmon.mode_history[:,1], size(ttmon.mode_history,1));
+            @views ImPlot.PlotLine("tilt", ax, ttmon.mode_history[:,2], size(ttmon.mode_history,1))
+            ImPlot.EndPlot()
 
             CImGui.SameLine();
         end
+
 
 
         CImGui.End() # End of this panel

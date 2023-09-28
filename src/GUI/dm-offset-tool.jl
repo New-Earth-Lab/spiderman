@@ -6,11 +6,17 @@ struct DMOffsetTool1
     pub::Aeron.AeronPublication
     pubhead::VenomsWireFormat{Vector{UInt8}}
     modemat::Matrix{Float32}
+    fmodemat::Matrix{Float32}
+    cyc_xs
+    cyc_ys
+    phases
 end
 function DMOffsetTool1(conf)
     aeron_config = AeronConfig(conf["output-channel"], conf["output-stream"])
 
-    modemat = Float32.(load(conf["modes"]))
+    modemat = Float32.(load(conf["zern-modes"]))
+    fmodemat, cyc_xs, cyc_ys, phases = load(conf["fourier-modes"],:)
+    fmodemat = Float32.(fmodemat)
 
     # Scale modes to be in units of 1nm RMS
     rmsnm = mapslices(modemat,dims=2) do actuator_volts
@@ -34,7 +40,14 @@ function DMOffsetTool1(conf)
 
     aeronpub = Aeron.publisher(aeron_config)
 
-    feed = DMOffsetTool1(conf["name"], aeron_config, aeronpub, pubhead, modemat)
+    feed = DMOffsetTool1(
+        conf["name"],
+        aeron_config,
+        aeronpub,
+        pubhead,
+        modemat,
+        fmodemat, cyc_xs, cyc_ys, phases
+    )
 
     return feed
 end
@@ -76,9 +89,17 @@ function gui_panel(::Type{DMOffsetTool1}, component_config)
     cmd = nothing
 
     modenames = [
+        "Tip",
+        "Tilt",
         "Focus",
         #TODO : Wyant numbering
     ]
+    modenames = [modenames; string.(4:30)]
+
+
+    cyc_x = Ref(Int32(6))
+    cyc_y = Ref(Int32(6))
+    famp = Ref(0f0)
 
     function draw(dmoff, visible)
 
@@ -104,30 +125,58 @@ function gui_panel(::Type{DMOffsetTool1}, component_config)
         end
 
         tt_range = Float32( dm_tt_coarse ? 750 : 150)
-        CImGui.Text("Tip (nm RMS)")
-        t = mode_amplitudes_nm_rms[1]
-        changed |= @c CImGui.SliderFloat("##Tip", &t, -tt_range, tt_range)
-        CImGui.SameLine()
-        changed |=  @c CImGui.InputFloat("##tip-num", &t)
-        mode_amplitudes_nm_rms[1] = t
-        CImGui.Text("Tilt (nm RMS)")
-        t = mode_amplitudes_nm_rms[2]
-        changed |= @c CImGui.SliderFloat("##Tilt", &t, -tt_range, tt_range)
-        CImGui.SameLine()
-        changed |=  @c CImGui.InputFloat("##tilt-num", &t)
-        mode_amplitudes_nm_rms[2] = t
+        # CImGui.Text("Tip (nm RMS)")
+        # t = mode_amplitudes_nm_rms[1]
+        # changed |= @c CImGui.SliderFloat("##Tip", &t, -tt_range, tt_range)
+        # CImGui.SameLine()
+        # changed |=  @c CImGui.InputFloat("##tip-num", &t)
+        # mode_amplitudes_nm_rms[1] = t
+        # CImGui.Text("Tilt (nm RMS)")
+        # t = mode_amplitudes_nm_rms[2]
+        # changed |= @c CImGui.SliderFloat("##Tilt", &t, -tt_range, tt_range)
+        # CImGui.SameLine()
+        # changed |=  @c CImGui.InputFloat("##tilt-num", &t)
+        # mode_amplitudes_nm_rms[2] = t
 
-        for (modename, modenum) in zip(modenames, 3:size(dmoff.modemat,1))
-            CImGui.Text("$modename (nm RMS)")
-            t = mode_amplitudes_nm_rms[modenum]
-            changed |= @c CImGui.SliderFloat("##$modename", &t, -tt_range, tt_range)
-            CImGui.SameLine()
-            changed |=  @c CImGui.InputFloat("##$modename-num", &t)
-            mode_amplitudes_nm_rms[modenum] = t
+
+
+        if CImGui.CollapsingHeader("Zernike")
+
+            for (modename, modenum) in zip(modenames, 1:size(dmoff.modemat,1))
+                CImGui.Text("$modename (nm RMS)")
+                t = mode_amplitudes_nm_rms[modenum]
+                changed |= @c CImGui.SliderFloat("##$modename", &t, -tt_range, tt_range)
+                changed |=  @c CImGui.InputFloat("##$modename-num", &t)
+                mode_amplitudes_nm_rms[modenum] = t
+            end
+        end
+        if CImGui.CollapsingHeader("Fourier")
+            CImGui.Text("Mode selector")
+            CImGui.Text("X (Cyc./pupil)")
+            CImGui.SliderInt("##X", cyc_x, -12, 12)
+            CImGui.Text("Y (Cyc./pupil)")
+            CImGui.SliderInt("##Y", cyc_y, 0, 12)
+            
+            CImGui.Text("Amplitude")
+            changed |= CImGui.SliderFloat("##Amp", famp, 0.0, tt_range)
+            if changed
+            # ii = findfirst(
+            #     dmoff.cyc_xs)
+            end
+
+            # for (modename, modenum) in zip(modenames, 1:size(dmoff.modemat,1))
+            #     CImGui.Text("$modename (nm RMS)")
+            #     t = mode_amplitudes_nm_rms[modenum]
+            #     changed |= @c CImGui.SliderFloat("##$modename", &t, -tt_range, tt_range)
+            #     CImGui.SameLine()
+            #     changed |=  @c CImGui.InputFloat("##$modename-num", &t)
+            #     mode_amplitudes_nm_rms[modenum] = t
+            # end
         end
 
         if changed
             mul!(cmd, dmoff.modemat', mode_amplitudes_nm_rms)
+            @info "changed"
             setact!(dmoff,cmd)
         end
 

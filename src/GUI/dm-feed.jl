@@ -7,13 +7,16 @@ mutable struct DMFeed
     actuator_map::BitMatrix
     valid_actuator_map::BitMatrix
     last_cmd_map::Matrix{Float32}
+    last_update_time::Base.RefValue{Float64}
+    const idle_timeout::Float64
 end
 function DMFeed(conf)
     aeron_config = AeronConfig(conf["input-channel"], conf["input-stream"])
     actuator_map = BitMatrix(load(conf["actuator-map"]))
     valid_actuator_map = BitMatrix(load(conf["valid-actuator-map"]))
-
+    idle_timeout = conf["idle-timeout"]
     subscription = Aeron.subscribe(aeron_config)
+    last_update_time = Ref(0.0)
 
     last_cmd_map = zeros(Float32, size(actuator_map))
 
@@ -23,6 +26,7 @@ function DMFeed(conf)
         # display(header)
         image = Image(header)
         last_cmd_map[actuator_map] .= vec(image)
+        last_update_time[] = time()
     end
     feed = DMFeed(
         conf["name"],
@@ -30,7 +34,9 @@ function DMFeed(conf)
         watch_handle,
         actuator_map,
         valid_actuator_map,
-        last_cmd_map
+        last_cmd_map,
+        last_update_time,
+        idle_timeout
     )
 
     return feed
@@ -56,8 +62,21 @@ function gui_panel(::Type{DMFeed}, component_config)
         # Not safe to decimate DM commands since they don't always come as continuous 
         # high speed streams. We might miss the last one and not show an important command
         dm_feed.aeron_watch_handle.decimate_time = 0
+
+
+        inactive = time() - dm_feed.last_update_time[] > dm_feed.idle_timeout
+
+        # @info "stat" time() - dm_feed.last_update_time[] dm_feed.idle_timeout inactive
+        # @info "stat" dm_feed.last_update_time[] dm_feed.idle_timeout inactive
         CImGui.SetNextWindowSize((350,350), CImGui.ImGuiCond_FirstUseEver)
-        if !CImGui.Begin(component_config["name"], visible)#, ImGuiWindowFlags_MenuBar)
+
+        if inactive
+            CImGui.PushStyleColor(ImGuiCol_Text, CImGui.IM_COL32(0xff, 0x22, 0x22, 0xff));
+        end
+        ret = CImGui.Begin(component_config["name"], visible)#, ImGuiWindowFlags_MenuBar)
+        CImGui.PopStyleColor()
+        if !ret
+            
             return
         end
         if first_view

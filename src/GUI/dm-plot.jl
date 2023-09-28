@@ -22,6 +22,12 @@ function plot_dm_commands(dm::DMFeed)
             abs(minimum(actuator_nm)),
             maximum(actuator_nm),
         ))
+
+        # Set the scale a bit beyond the extrema of the current
+        # command, this gives room to see transients before
+        # the auto-scale adjusts
+        actuator_nm_extrema *= 1.5
+
         actuator_nm[.! dm.valid_actuator_map] .= Inf
         # Remove any user-requested modes
         # if sub_bestflat[]
@@ -73,11 +79,16 @@ function plot_dm_commands(dm::DMFeed)
                 if scale_amount[] == Cfloat(0.1)
                     scale_amount[] = actuator_nm_extrema
                 end    
-                scale_amount[] = scale_amount[] + 0.015(actuator_nm_extrema - scale_amount[])
+                scale_amount[] = scale_amount[] + 0.01(actuator_nm_extrema - scale_amount[])
             end
         end
         if CImGui.Button("auto")
             auto_scale = true
+        end
+        CImGui.SameLine()
+        if CImGui.Button("1 nm")
+            auto_scale = false
+            scale_amount[] = 1
         end
         CImGui.SameLine()
         if CImGui.Button("10 nm")

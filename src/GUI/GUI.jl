@@ -235,6 +235,10 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
 
     gui_active[] = true
 
+    # How long should we sleep after each frame to achieve 60fps?
+    sleep_delta_t = 0.000
+    # We start this at zero and updatebased on the frame rate to aim for 60fps
+
     frame_i = 0
     trigger_revision = false
     world = Base.get_world_counter() 
@@ -347,11 +351,15 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
             # will yield, the REPL will print a few characters, then we'll sit here
             # spinning until the the next frame/sync comes in. 
             # So the best strategy is to yield with a sleep to explicitly say that
-            # the REPL can run for a little while. In theory waiting until we have to
-            # to generate the next frame can actually reduce GUI latency by a sub-frame 
+            # the REPL can run for a little while. In theory waiting until we absolutely 
+            # have to generate the next frame can actually reduce GUI latency by a sub-frame 
             # amount. Some video games do this. But that's not the main reason here.
             # yield()
-            sleep(0.002)
+            fps = unsafe_load(CImGui.GetIO().Framerate)
+            delta = 1/60 - 1/fps
+            sleep_delta_t = sleep_delta_t + 0.05*delta
+            sleep_delta_t = clamp(sleep_delta_t, 0, 1)
+            sleep(sleep_delta_t)
         end
     finally
         # Run when the GUI exits for any reason
@@ -423,8 +431,8 @@ function draw_loop(info)
             CImGui.EndMenu()
         end
 
-        fps = unsafe_load(CImGui.GetIO().Framerate)
         CImGui.SameLine(CImGui.GetWindowWidth()-100)
+        fps = unsafe_load(CImGui.GetIO().Framerate)
         CImGui.Text(@sprintf("GUI FPS: %3.0f",fps))
         CImGui.EndMainMenuBar()
     end

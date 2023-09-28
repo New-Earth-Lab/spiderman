@@ -40,6 +40,22 @@
     # cropx = [147,467]
     # cropy = [67,387]
 
+
+[[component]]
+    type="ImageFeed"
+    name="IFTS (uncalibrated)"
+    input-channel="aeron:ipc"
+    input-stream=1006
+    auto_show = false
+    
+[[component]]
+    type="ImageFeed"
+    name="IFTS"
+    input-channel="aeron:ipc"
+    input-stream=1016
+    auto_show = false
+    
+
 [[component]]
     type="ImageFeed"
     name="CRED2"
@@ -92,6 +108,7 @@
     input-channel="aeron:ipc"
     input-stream=2001
     auto_show = true
+    idle-timeout = 0.01
 
 [[component]]
     type="DMFeed"
@@ -101,7 +118,7 @@
     input-channel="aeron:ipc"
     input-stream=3001
     auto_show = true
-
+    idle-timeout = 0.01
 
 [[component]]
     type="DMFeed"
@@ -111,6 +128,7 @@
     input-channel="aeron:udp?endpoint=localhost:20121"
     input-stream=1002
     auto_show = true
+    idle-timeout = 1.0
 
 [[component]]
     type="DMFeed"
@@ -120,15 +138,38 @@
     input-channel="aeron:ipc"
     input-stream=1005
     auto_show = true
+    idle-timeout = 1e30 # never timeout
+
+[[component]]
+    type="DMFeed"
+    name="SCC Residual"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=6000
+    auto_show = true
+    idle-timeout = 10.0
+
+
+[[component]]
+    type="DMFeed"
+    name="SCC Output"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=7000
+    auto_show = true
+    idle-timeout = 10.0
 
 
 [[component]]
     type="DMOffsetTool1"
     name="DM Offset Tool 1"
-    modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    zern-modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    fourier-modes="/mnt/datadrive/DATA/SCC/modemat-all.fits"
     output-channel="aeron:ipc"
     output-stream=1005
-    auto_show = true
+    auto_show = false
 
 
 [[component]]
