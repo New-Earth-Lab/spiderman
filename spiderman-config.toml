@@ -1,3 +1,8 @@
+# Notes:
+# the auto_show  property decides which panels open automatically.
+# As a side effect, the gui renderering code for panels with auto_show=true will be precompiled while
+# others will not.
+
 [general]
     data_path = "/mnt/datadrive/DATA"
 
@@ -8,6 +13,7 @@
 [[component]]
     type="ImageViewer"
     name = "Image Viewer 2"
+    auto_show = true
 
     
 [[component]]
@@ -34,7 +40,7 @@
     name="CRED2 (uncalibrated)"
     input-channel="aeron:ipc"
     input-stream=1001
-    auto_show = false
+    auto_show = true
 
     # crop = true
     # cropx = [147,467]
@@ -46,14 +52,14 @@
     name="IFTS (uncalibrated)"
     input-channel="aeron:ipc"
     input-stream=1006
-    auto_show = false
+    auto_show = true
     
 [[component]]
     type="ImageFeed"
     name="IFTS"
     input-channel="aeron:ipc"
     input-stream=1016
-    auto_show = false
+    auto_show = true
     
 
 [[component]]
@@ -67,6 +73,29 @@
     # cropx = [147,467]
     # cropy = [67,387]
 
+[[component]]
+    type="ImageFeed"
+    name="CRED2: Differential"
+    input-channel="aeron:ipc"
+    input-stream=5003
+    auto_show = true
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
+
+[[component]]
+    type="ImageFeed"
+    name="CRED2: Un-Fringed"
+    input-channel="aeron:ipc"
+    input-stream=5001
+    auto_show = true
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
 
 
 [[component]]
@@ -74,31 +103,11 @@
     name="CRED2: Fringed"
     input-channel="aeron:ipc"
     input-stream=5002
+    auto_show = true
 
     # crop = true
     # cropx = [147,467]
     # cropy = [67,387]
-
-[[component]]
-    type="ImageFeed"
-    name="CRED2: Un-Fringed"
-    input-channel="aeron:ipc"
-    input-stream=5001
-
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
-
-[[component]]
-    type="ImageFeed"
-    name="CRED2: Differential"
-    input-channel="aeron:ipc"
-    input-stream=5003
-
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
-
 
 [[component]]
     type="DMFeed"
@@ -110,15 +119,18 @@
     auto_show = true
     idle-timeout = 0.01
 
+
 [[component]]
     type="DMFeed"
-    name="LOWFS Output"
+    name="LOWFS Prediction"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     input-channel="aeron:ipc"
-    input-stream=3001
-    auto_show = true
+    input-stream=9001
+    auto_show = false
     idle-timeout = 0.01
+
+
 
 [[component]]
     type="DMFeed"
@@ -132,11 +144,21 @@
 
 [[component]]
     type="DMFeed"
-    name="DM Offset"
+    name="Calibration Offset"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     input-channel="aeron:ipc"
     input-stream=1005
+    auto_show = true
+    idle-timeout = 5.0
+
+[[component]]
+    type="DMFeed"
+    name="User Offset"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    input-channel="aeron:ipc"
+    input-stream=1007
     auto_show = true
     idle-timeout = 1e30 # never timeout
 
@@ -150,10 +172,9 @@
     auto_show = true
     idle-timeout = 10.0
 
-
 [[component]]
     type="DMFeed"
-    name="SCC Output"
+    name="Integrator Output"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     input-channel="aeron:ipc"
@@ -163,13 +184,16 @@
 
 
 [[component]]
-    type="DMOffsetTool1"
-    name="DM Offset Tool 1"
+    type="DMOffsetTool"
+    name="DM Offset Tool"
     zern-modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    lowfs-modes="/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"
     fourier-modes="/mnt/datadrive/DATA/SCC/modemat-all.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     output-channel="aeron:ipc"
-    output-stream=1005
-    auto_show = false
+    output-stream=1007
+    auto_show = true
 
 
 [[component]]
@@ -188,4 +212,13 @@
     history-length=850
     input-channel="aeron:ipc"
     input-stream=2001
+    auto_show = true
+
+
+[[component]]
+    name = "Integrator Control"
+    type = "Integrator"
+    url-scc = "http://localhost:8009"
+    url-lowfs = "http://localhost:8008"
+    url-integ = "http://localhost:8010"
     auto_show = false

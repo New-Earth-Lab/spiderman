@@ -87,6 +87,7 @@ function gui_panel(::Type{TTMonitor}, component_config)
             end
         end
 
+
         w = CImGui.GetWindowWidth() - 10
         h = (CImGui.GetWindowHeight() - 40)/2
         plotsize = ImVec2(w,h)
@@ -102,13 +103,16 @@ function gui_panel(::Type{TTMonitor}, component_config)
             ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "tilt")
             ImPlot.SetupFinish()
             ImPlot.SetNextLineStyle(ImVec4(1f0, 1.f0, 1f0, 0.25f0););
-            @views ImPlot.PlotLine("Integrated", ttmon.mode_history[:,1], ttmon.mode_history[:,2], size(ttmon.mode_history,1), 0, ttmon.counter[]);
-            ImPlot.PushStyleVar(ImPlot.ImPlotStyleVar_FillAlpha, 0.75f0);
-            ImPlot.SetNextMarkerStyle(ImPlot.ImPlotMarker_Circle, 6, ImPlot.GetColormapColor(0), ImPlot.IMPLOT_AUTO, ImPlot.GetColormapColor(0));
-            x .= ttmon.mode_history[ttmon.counter[],1]
-            y .= ttmon.mode_history[ttmon.counter[],2]
-            ImPlot.PlotScatter("Integrated (latest)", x, y, 1);
-            ImPlot.PopStyleVar();
+
+            if ttmon.counter[] != 0
+                @views ImPlot.PlotLine("Integrated", ttmon.mode_history[:,1], ttmon.mode_history[:,2], size(ttmon.mode_history,1), 0, ttmon.counter[]);
+                ImPlot.PushStyleVar(ImPlot.ImPlotStyleVar_FillAlpha, 0.75f0);
+                ImPlot.SetNextMarkerStyle(ImPlot.ImPlotMarker_Circle, 6, ImPlot.GetColormapColor(0), ImPlot.IMPLOT_AUTO, ImPlot.GetColormapColor(0));
+                x .= ttmon.mode_history[ttmon.counter[],1]
+                y .= ttmon.mode_history[ttmon.counter[],2]
+                ImPlot.PlotScatter("Integrated (latest)", x, y, 1);
+                ImPlot.PopStyleVar();
+            end
 
             ImPlot.EndPlot()
         end

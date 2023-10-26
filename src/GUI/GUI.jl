@@ -101,6 +101,7 @@ include("dm-feed.jl")
 include("dm-plot.jl")
 include("dm-offset-tool.jl")
 include("tip-tilt-monitor.jl")
+include("integrator.jl")
 
 # Background for whole GUI
 const clear_color = Cfloat[0.2, 0.2, 0.2, 1.0] #Cfloat[0.0, 0.15294117647058825, 0.25098039215686274, 1.00]
@@ -114,6 +115,8 @@ data_path = nothing
 
 const component_panel_map = Dict{Any, Any}()
 
+global font_default
+global font_small
 
 # HOT RELOADING
 # The VENOMS GUI supports hot code reloading powered by Revise.jl
@@ -223,7 +226,10 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
     fonts = unsafe_load(io.Fonts)
     # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/NotoSansMono-Regular.ttf"), 30)
     # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Sweet16mono.ttf"), 18)
-    CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
+    global font_default
+    global font_small
+    font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
+    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 12)
 
 
     # init
@@ -261,7 +267,7 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
                 
                 # This should not be so difficult to set basic window properties
                 ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowTitle(igGetMainViewport(), convert(Ptr{Int8}, pointer("SPIDER-MAN")))
-                # ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(1900,980))
+                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(400,600))
                 # ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowPos(igGetMainViewport(), ImVec2(10,30))
             end
 

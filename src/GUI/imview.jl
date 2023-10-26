@@ -264,25 +264,25 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                         cmin[], cmax[] = extrema(buffer)
                     end
                     if CImGui.MenuItem("99.99% (default)")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.0001, 0.9999))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.0001, 0.9999))
                     end
                     if CImGui.MenuItem("99.9%")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.001, 0.999))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.001, 0.999))
                     end
                     if CImGui.MenuItem("99%")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.01, 0.99))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.01, 0.99))
                     end
                     if CImGui.MenuItem("95%")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.05, 0.95))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.05, 0.95))
                     end
                     if CImGui.MenuItem("90%")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.1, 0.90))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.1, 0.90))
                     end
                     if CImGui.MenuItem("70%")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.3, 0.70))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.3, 0.70))
                     end
                     if CImGui.MenuItem("60%")
-                        cmin[], cmax[] = quantile(vec(buffer), (0.4, 0.60))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.4, 0.60))
                     end
                     if cmin[] == cmax[] 
                         cmin[]=0
