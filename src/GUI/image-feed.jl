@@ -8,24 +8,22 @@ mutable struct ImageFeed
 end
 function ImageFeed(conf)
     aeron_config = AeronConfig(conf["input-channel"], conf["input-stream"])
-    subscription = Aeron.subscribe(aeron_config)
+    subscription = Aeron.subscriber(aeron, aeron_config)
+
     watch_handle = Aeron.watch(subscription) do frame
-        header = VenomsWireFormat(frame.buffer)
-
-        # @info "Message received" SizeX(header) SizeY(header) TimestampNs(header)
-        # display(header)
-        image = Image(header)
-
-        # Check if last image compatible with new dimensions and data type
-        # copy into last img
-        if size(feed.last_img) != size(image)
-            @info "New image feed dimensions received"
-            feed.last_img = Float32.(image)
-            feed.first_view = true
-        else
-            feed.last_img .= image
+        try
+            ten = TensorMessage(frame.buffer, initialize=false)
+            if size(feed.last_img) != size(ten)
+                feed.last_img = Float32.(SpidersMessageEncoding.arraydata(ten))
+                feed.first_view = true
+            else
+                feed.last_img .= Float32.(SpidersMessageEncoding.arraydata(ten))
+            end
+        catch err
+            @error "Error receiving image update" exception=(err, catch_backtrace())
         end
     end
+
     feed = ImageFeed(conf["name"], aeron_config, watch_handle, zeros(Float32, 0, 0), true)
 
     return feed

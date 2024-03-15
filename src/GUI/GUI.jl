@@ -103,6 +103,9 @@ include("dm-offset-tool.jl")
 include("tip-tilt-monitor.jl")
 include("integrator.jl")
 
+include("block.jl")
+
+
 # Background for whole GUI
 const clear_color = Cfloat[0.2, 0.2, 0.2, 1.0] #Cfloat[0.0, 0.15294117647058825, 0.25098039215686274, 1.00]
 const good_color =  Cfloat[0.15294117647058825, 0.6588235294117647, 0.1607843137254902, 1.0, ]
@@ -162,8 +165,7 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
             end
             println(stderr)
             println(stderr)
-            @error "Error during GUI loop" typeof(exception) exception  _module=nothing _file=nothing _line=0
-            Base.show_backtrace(stderr, catch_backtrace())
+            @error "Error during GUI loop" exception=(exception,catch_backtrace())  _module=nothing _file=nothing _line=0
             println(stderr)
         end
 
@@ -513,8 +515,7 @@ function draw_loop(info)
                     end
                     component_panel_map[key][2][] = true
                     component_panel_map[key][3][] = true
-                    @error "Error in GUI panel " exception=err name=component_config["name"] typeof(err)  _module=nothing _file=nothing _line=0
-                    Base.show_backtrace(stderr, bt)
+                    @error "Error in GUI panel " exception=(err, bt) name=component_config["name"] typeof(err)  _module=nothing _file=nothing _line=0
                 end
             end
         end

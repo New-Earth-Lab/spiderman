@@ -15,18 +15,19 @@ function DMFeed(conf)
     actuator_map = BitMatrix(load(conf["actuator-map"]))
     valid_actuator_map = BitMatrix(load(conf["valid-actuator-map"]))
     idle_timeout = conf["idle-timeout"]
-    subscription = Aeron.subscribe(aeron_config)
+    subscription = Aeron.subscriber(aeron, aeron_config)
     last_update_time = Ref(0.0)
 
     last_cmd_map = zeros(Float32, size(actuator_map))
 
     watch_handle = Aeron.watch(subscription) do frame
-        header = VenomsWireFormat(frame.buffer)
-        # @info "Message received" SizeX(header) SizeY(header) TimestampNs(header)
-        # display(header)
-        image = Image(header)
-        last_cmd_map[actuator_map] .= vec(image)
-        last_update_time[] = time()
+        try
+            dm_msg = TensorMessage(frame.buffer, initialize=false)
+            last_cmd_map[actuator_map] .= SpidersMessageEncoding.arraydata(dm_msg)
+            last_update_time[] = time()
+        catch err
+            @error "Error receiving DM command update" exception=(err, catch_backtrace())
+        end
     end
     feed = DMFeed(
         conf["name"],
@@ -73,11 +74,25 @@ function gui_panel(::Type{DMFeed}, component_config)
         if inactive
             CImGui.PushStyleColor(ImGuiCol_Text, CImGui.IM_COL32(0xff, 0x22, 0x22, 0xff));
         end
-        ret = CImGui.Begin(component_config["name"], visible)#, ImGuiWindowFlags_MenuBar)
+        ret = CImGui.Begin(component_config["name"], visible, ImGuiWindowFlags_MenuBar)
         CImGui.PopStyleColor()
         if !ret
-            
             return
+        end
+        if CImGui.BeginMenuBar()
+            if CImGui.BeginMenu("File")
+                if CImGui.MenuItem("Save vector to FITS")
+                    fnameout = "/tmp/dm-vec.fits"
+                    out = dm_feed.last_cmd_map[dm_feed.actuator_map]
+                    AstroImages.writefits(fnameout, out)
+                    @info "DM command vector ($(dm_feed.name)) written" fnameout
+                end
+                if CImGui.MenuItem("Send map to image viewer")
+                    imviewgui(dm_feed.last_cmd_map, name="DM command map ($(dm_feed.name))")
+                end
+                CImGui.EndMenu()
+            end
+            CImGui.EndMenuBar()
         end
         if first_view
             dm_cmd_draw = plot_dm_commands(dm_feed)

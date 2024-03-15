@@ -1,11 +1,13 @@
 using Printf
 using LinearAlgebra
 using Aeron
+using SpidersMessageEncoding
+
 struct DMOffsetTool
     name::String
     aeron_config::AeronConfig
     pub::Aeron.AeronPublication
-    pubhead::VenomsWireFormat{Vector{UInt8}}
+    pubhead::ArrayMessage{Float32,1,Vector{UInt8}}
     actuator_map::BitMatrix
     valid_actuator_map::BitMatrix
     modemat::Matrix{Float32}
@@ -50,17 +52,11 @@ function DMOffsetTool(conf)
     # This is a byte buffer where we store our messages we want to send over Aeron
     # We can view into it to see the last command we sent.
     buffer = zeros(UInt8, 468*8+60*4)
+    pubhead = ArrayMessage{Float32,1}(buffer)
+    arraydata!(pubhead, zeros(Float32, 468))
+    pubhead.header.description = conf["output-key"]
 
-    # This header holds the buffer along with metadata to send over the wire
-    pubhead = VenomsWireFormat(buffer)
-    SizeX!(pubhead, 468)
-    SizeY!(pubhead, 1)
-    Format!(pubhead, 10) # Float64
-    MetadataLength!(pubhead,  0)
-    ImageBufferLength!(pubhead, 468*8)
-    ImageBufferLength(pubhead)
-
-    aeronpub = Aeron.publisher(aeron_config)
+    aeronpub = Aeron.publisher(aeron, aeron_config)
 
     feed = DMOffsetTool(
         conf["name"],
@@ -91,9 +87,9 @@ function setact!(dmoff::DMOffsetTool, command_vec::AbstractVector{<:Number})
         end
     end
     current_time = round(UInt64, time()*1e9) # TODO: this is messy. Unclear if the accuarcy is good.
-    TimestampNs!(dmoff.pubhead, current_time)
-    Image(dmoff.pubhead) .= command_vec
-    status = Aeron.publication_offer(dmoff.pub, dmoff.pubhead.buffer)
+    dmoff.pubhead.header.TimestampNs = current_time
+    SpidersMessageEncoding.arraydata(dmoff.pubhead) .= command_vec
+    status = Aeron.publication_offer(dmoff.pub, parent(dmoff.pubhead))
 end
 
 

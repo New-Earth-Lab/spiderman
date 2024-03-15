@@ -20,12 +20,12 @@
     type="ImageViewer"
     name = "Image Viewer 3"
 
-[[component]]
-    type = "ImageFeed"
-    name = "GoldEye (uncalibrated)"
-    input-channel = "aeron:ipc"
-    input-stream = 1003
-    auto_show = false
+# [[component]]
+#     type = "ImageFeed"
+#     name = "GoldEye (uncalibrated)"
+#     input-channel = "aeron:ipc"
+#     input-stream = 1003
+#     auto_show = false
 
 [[component]]
     type = "ImageFeed"
@@ -35,24 +35,24 @@
     auto_show = true
 
 
-[[component]]
-    type="ImageFeed"
-    name="CRED2 (uncalibrated)"
-    input-channel="aeron:ipc"
-    input-stream=1001
-    auto_show = true
+# [[component]]
+#     type="ImageFeed"
+#     name="CRED2 (uncalibrated)"
+#     input-channel="aeron:ipc"
+#     input-stream=1001
+#     auto_show = true
 
-    # crop = true
-    # cropx = [147,467]
-    # cropy = [67,387]
+#     # crop = true
+#     # cropx = [147,467]
+#     # cropy = [67,387]
 
 
-[[component]]
-    type="ImageFeed"
-    name="IFTS (uncalibrated)"
-    input-channel="aeron:ipc"
-    input-stream=1006
-    auto_show = true
+# [[component]]
+#     type="ImageFeed"
+#     name="IFTS (uncalibrated)"
+#     input-channel="aeron:ipc"
+#     input-stream=1006
+#     auto_show = true
     
 [[component]]
     type="ImageFeed"
@@ -137,8 +137,8 @@
     name="DM Mixer Output"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
-    input-channel="aeron:udp?endpoint=localhost:20121"
-    input-stream=1002
+    input-channel="aeron:ipc"
+    input-stream=105
     auto_show = true
     idle-timeout = 1.0
 
@@ -148,7 +148,7 @@
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     input-channel="aeron:ipc"
-    input-stream=1005
+    input-stream=104
     auto_show = true
     idle-timeout = 5.0
 
@@ -157,8 +157,10 @@
     name="User Offset"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    # input-channel="aeron:ipc"
+    # input-stream=1007
     input-channel="aeron:ipc"
-    input-stream=1007
+    input-stream=103
     auto_show = true
     idle-timeout = 1e30 # never timeout
 
@@ -192,9 +194,99 @@
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     output-channel="aeron:ipc"
-    output-stream=1007
+    output-stream=103
+    output-key="offset"
     auto_show = true
 
+[[component]]
+    type="DMOffsetTool"
+    name="DM CalibOffset Tool"
+    zern-modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
+    lowfs-modes="/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"
+    fourier-modes="/mnt/datadrive/DATA/SCC/modemat-all.fits"
+    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+    output-channel="aeron:ipc"
+    output-stream=104
+    output-key="calibration"
+    auto_show = false
+
+
+[[component]]
+    type="RTCBlock1"
+    name="DM Mixer"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=101
+    status-channel="aeron:ipc"
+    status-stream=102
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["serialno", "String", "BAX307"],
+        ["clip", "Float64", "0.5"],
+        ["bestflat", "array", "/mnt/datadrive/DATA/dm/bestflat.fits"],
+    ]
+
+[[component]]
+    type="RTCBlock1"
+    name="LOWFS"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=301
+    status-channel="aeron:ipc"
+    status-stream=302
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["reference_image", "array", "/mnt/datadrive/DATA/LOWFS/reference-image.fits"],
+        ["image_mask", "array",      "/mnt/datadrive/DATA/LOWFS/image-mask.fits"],
+        ["cog_image_mask", "array",  "/mnt/datadrive/DATA/LOWFS/cog-image-mask.fits"],
+        ["image_to_modes", "array",  "/mnt/datadrive/DATA/LOWFS/slopes-to-TT.fits"],
+        ["modes_to_actus", "array",  "/mnt/datadrive/DATA/LOWFS/cog-reference.fits"],
+        ["slopes_to_TT", "array",    "/mnt/datadrive/DATA/LOWFS/image-to-modes.fits"],
+        ["cog_reference", "array",   "/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"],
+    ]
+
+
+# [[component]]
+#     type="RTCBlock1"
+#     name="Archiver"
+#     auto_show=true
+#     event-channel="aeron:ipc"
+#     event-stream=201
+#     status-channel="aeron:ipc"
+#     status-stream=102
+#         event-buttons = [
+#         "Exit",
+#         "Reset",
+#         "Stop",
+#         "Play",
+#         "Pause",
+#         "StatusRequest",
+#     ]
+#     event-fields = [
+#         # name, type, default
+#         ["uri", "String", "aeron:ipc"],
+#         ["stream", "Float64", "1101"],
+#         ["enabled", "Float64", "1.0"],
+#     ]
 
 [[component]]
     type="TTMonitor"
@@ -212,7 +304,7 @@
     history-length=850
     input-channel="aeron:ipc"
     input-stream=2001
-    auto_show = true
+    auto_show = false
 
 
 [[component]]

@@ -17,7 +17,7 @@ function TTMonitor(conf)
 
     mode_history = zeros(Float32, history_length, size(actus2modes,1))
 
-    subscription = Aeron.subscribe(aeron_config)
+    subscription = Aeron.subscriber(aeron, aeron_config)
     counter = Ref(0)
 
     # Julia fast closure bug workaround
