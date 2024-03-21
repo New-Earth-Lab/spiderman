@@ -23,16 +23,20 @@ function TTMonitor(conf)
     # Julia fast closure bug workaround
     watch_handle = let mode2actus=mode2actus, counter=counter, mode_history=mode_history
         watch_handle = Aeron.watch(subscription) do frame
-            header = VenomsWireFormat(frame.buffer)
-            # @info "Message received" SizeX(header) SizeY(header) TimestampNs(header)
-            # display(header)
-            image = Image(header)
-            counter[] += 1
-            if counter[] > size(mode_history,1)
-                counter[] = 1
+            try
+                dm_msg = ArrayMessage{Float32,1}(frame.buffer, initialize=false)
+                # last_update_time[] = time()
+
+                counter[] += 1
+                if counter[] > size(mode_history,1)
+                    counter[] = 1
+                end
+                v = view(mode_history, counter[], :)
+                mul!(vec(v)'', actus2modes, SpidersMessageEncoding.arraydata(dm_msg))
+
+            catch err
+                @error "Error receiving DM command update" exception=(err, catch_backtrace())
             end
-            v = view(mode_history, counter[], :)
-            mul!(vec(v)'', actus2modes, vec(image))
         end 
     end
     feed = TTMonitor(

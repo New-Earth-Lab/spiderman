@@ -230,8 +230,10 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
     # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Sweet16mono.ttf"), 18)
     global font_default
     global font_small
+    global font_large
     font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
-    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 12)
+    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 10)
+    font_large = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 24)
 
 
     # init

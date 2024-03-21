@@ -50,6 +50,7 @@ function gui_panel(::Type{ImageFeed}, component_config)
         # Only do work assembling incoming messages if the panel is visible
         Aeron.active(image_feed.aeron_watch_handle, visible[]) 
         image_feed.aeron_watch_handle.decimate_time = 1/60
+        # image_feed.aeron_watch_handle.decimate_time = 0
 
         CImGui.SetNextWindowSize((350,350), CImGui.ImGuiCond_FirstUseEver)
 

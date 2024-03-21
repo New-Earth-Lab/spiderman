@@ -214,12 +214,10 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
                         actu_i += 1
                     end
                     if !dmoff.actuator_map[rowi,coli]
-                        # CImGui.Text("")
                     elseif !dmoff.valid_actuator_map[rowi,coli]
                     else
-                        # CImGui.Text("0")
                         amp = Ref(manual_offset[actu_i])
-                        if @c CImGui.DragFloat("##$rowi$coli", amp, 0.001, -0.5, 0.5, "%4.1f")
+                        if @c CImGui.DragFloat("##$rowi$coli", amp, 0.01, -0.5, 0.5, "%0.2f")
                             manual_offset[actu_i] = amp[]
                             @info "actuator poke" actu_i amp
                             changed = true
@@ -232,7 +230,12 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
 
             end
             CImGui.PopFont()
-
+            CImGui.Columns(1, "dm-poke-grid", false);
+            if CImGui.SmallButton("Reset##manual")
+                changed = true
+                manual_offset .= 0
+            end
+    
         end
 
 

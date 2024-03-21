@@ -25,7 +25,7 @@
 #     name = "GoldEye (uncalibrated)"
 #     input-channel = "aeron:ipc"
 #     input-stream = 1003
-#     auto_show = false
+#     auto_show = true
 
 [[component]]
     type = "ImageFeed"
@@ -127,7 +127,7 @@
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     input-channel="aeron:ipc"
     input-stream=9001
-    auto_show = false
+    auto_show = true
     idle-timeout = 0.01
 
 
@@ -150,7 +150,7 @@
     input-channel="aeron:ipc"
     input-stream=104
     auto_show = true
-    idle-timeout = 5.0
+    idle-timeout = 1e30 # never timeout
 
 [[component]]
     type="DMFeed"
@@ -209,7 +209,7 @@
     output-channel="aeron:ipc"
     output-stream=104
     output-key="calibration"
-    auto_show = false
+    auto_show = true
 
 
 [[component]]
@@ -236,6 +236,36 @@
         ["bestflat", "array", "/mnt/datadrive/DATA/dm/bestflat.fits"],
     ]
 
+
+[[component]]
+    type="RTCBlock1"
+    name="Integrator"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=401
+    status-channel="aeron:ipc"
+    status-stream=402
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["gain", "Float64", "0.1"],
+        ["leak", "Float64", "0.01"],
+        ["clip", "Float64", "0.2"],
+        ["modes_to_actus", "array", "/mnt/datadrive/DATA/SCC/modes-to-actus.fits"],
+        ["actus_to_modes", "array", "/mnt/datadrive/DATA/SCC/actus-to-modes.fits"],
+        ["invis_modes_to_actus", "array", "/mnt/datadrive/DATA/SCC/invis-modes-to-actus.fits"],
+        ["actus_to_invis_modes", "array", "/mnt/datadrive/DATA/SCC/actus-to-invis-modes.fits"],
+
+    ]
+
 [[component]]
     type="RTCBlock1"
     name="LOWFS"
@@ -255,13 +285,13 @@
     ]
     event-fields = [
         # name, type, default
-        ["reference_image", "array", "/mnt/datadrive/DATA/LOWFS/reference-image.fits"],
         ["image_mask", "array",      "/mnt/datadrive/DATA/LOWFS/image-mask.fits"],
         ["cog_image_mask", "array",  "/mnt/datadrive/DATA/LOWFS/cog-image-mask.fits"],
-        ["image_to_modes", "array",  "/mnt/datadrive/DATA/LOWFS/slopes-to-TT.fits"],
-        ["modes_to_actus", "array",  "/mnt/datadrive/DATA/LOWFS/cog-reference.fits"],
-        ["slopes_to_TT", "array",    "/mnt/datadrive/DATA/LOWFS/image-to-modes.fits"],
-        ["cog_reference", "array",   "/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"],
+        ["reference_image", "array", "/mnt/datadrive/DATA/LOWFS/reference-image.fits"],
+        ["image_to_modes", "array",  "/mnt/datadrive/DATA/LOWFS/image-to-modes.fits"],
+        ["modes_to_actus", "array",  "/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"],
+        ["slopes_to_TT", "array",    "/mnt/datadrive/DATA/LOWFS/slopes-to-TT.fits"],
+        ["cog_reference", "array-paddle",   "/mnt/datadrive/DATA/LOWFS/cog-reference.fits"],
     ]
 
 
@@ -290,12 +320,12 @@
 
 [[component]]
     type="TTMonitor"
-    name="LOWFS TT Monitor"
+    name="TT Monitor"
     modes-to-actus="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
     history-length=850
     input-channel="aeron:ipc"
-    input-stream=3001
-    auto_show = false
+    input-stream=7000
+    auto_show = true
 
 [[component]]
     type="TTMonitor"
@@ -304,13 +334,13 @@
     history-length=850
     input-channel="aeron:ipc"
     input-stream=2001
-    auto_show = false
+    auto_show = true
 
 
-[[component]]
-    name = "Integrator Control"
-    type = "Integrator"
-    url-scc = "http://localhost:8009"
-    url-lowfs = "http://localhost:8008"
-    url-integ = "http://localhost:8010"
-    auto_show = false
+# [[component]]
+#     name = "Integrator Control"
+#     type = "Integrator"
+#     url-scc = "http://localhost:8009"
+#     url-lowfs = "http://localhost:8008"
+#     url-integ = "http://localhost:8010"
+#     auto_show = true
