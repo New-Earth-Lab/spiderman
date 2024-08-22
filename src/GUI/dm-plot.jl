@@ -41,7 +41,7 @@ function plot_dm_commands(dm::DMFeed)
         # end 
 
         w = CImGui.GetWindowWidth() -80
-        h = CImGui.GetWindowHeight() - 95
+        h = CImGui.GetWindowHeight() - 110
         d = min(w,h)
         plotsize = ImVec2(d,d)
 
@@ -52,7 +52,6 @@ function plot_dm_commands(dm::DMFeed)
         #     ImPlot.EndPlot()
         # end
 
-        
         if ImPlot.BeginPlot("", plotsize, ImPlot.ImPlotFlags_Crosshairs | ImPlot.ImPlotFlags_Equal)
             cmap = ImPlot.ImPlotColormap_RdBu
 

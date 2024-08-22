@@ -101,9 +101,11 @@ include("dm-feed.jl")
 include("dm-plot.jl")
 include("dm-offset-tool.jl")
 include("tip-tilt-monitor.jl")
+include("fts-monitor.jl")
+include("perf-mon.jl")
 include("integrator.jl")
-
 include("block.jl")
+include("archiver.jl")
 
 
 # Background for whole GUI
@@ -231,9 +233,9 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
     global font_default
     global font_small
     global font_large
-    font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
-    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 10)
-    font_large = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 24)
+    font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 14)
+    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 8)
+    font_large = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
 
 
     # init
@@ -271,7 +273,7 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
                 
                 # This should not be so difficult to set basic window properties
                 ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowTitle(igGetMainViewport(), convert(Ptr{Int8}, pointer("SPIDER-MAN")))
-                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(400,600))
+                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(3840,2048))
                 # ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowPos(igGetMainViewport(), ImVec2(10,30))
             end
 
@@ -418,7 +420,7 @@ function draw_loop(info)
             if CImGui.MenuItem("Revise")
                 trigger_revision = true
             end
-            if CImGui.MenuItem("Close window")
+            if CImGui.MenuItem("Close windows (leave Julia running)")
                 CImGui.EndMenu()
                 CImGui.EndMenuBar()
                 throw(InterruptException())
@@ -452,9 +454,11 @@ function draw_loop(info)
     # splash screen for a few frames first, so that if it freezes, people
     # know that things are still loading.
     if frame_i < 5
-        p = CImGui.GetWindowPos()
-        CImGui.SetNextWindowPos(ImVec2(50 + p.x, 50 + p.y))
-        CImGui.SetNextWindowSize(ImVec2(400,400))
+        # p = CImGui.GetWindowPos()
+        # io = igGetIO()
+        # d = unsafe_load(io.DisplaySize)
+        # CImGui.SetNextWindowPos(ImVec2(0,0))
+        # CImGui.SetNextWindowSize(ImVec2(d.x-150, d.y-150))
         CImGui.SetNextWindowFocus()
         CImGui.Begin("##loading")
         CImGui.TextWrapped("Loading...")

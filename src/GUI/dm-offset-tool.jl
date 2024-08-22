@@ -81,11 +81,6 @@ name(dm::DMOffsetTool) = dm.name
 Send a command to an ALPAO DM using PCI card.
 """
 function setact!(dmoff::DMOffsetTool, command_vec::AbstractVector{<:Number})
-    for v in command_vec
-        if !(-0.5 < v < 0.5)
-            error("Provided DM command exceeds valid range (-0.5 < cmd < 0.5)")
-        end
-    end
     current_time = round(UInt64, time()*1e9) # TODO: this is messy. Unclear if the accuarcy is good.
     dmoff.pubhead.header.TimestampNs = current_time
     SpidersMessageEncoding.arraydata(dmoff.pubhead) .= command_vec
@@ -96,12 +91,6 @@ end
 function gui_panel(::Type{DMOffsetTool}, component_config)
 
     err_msg = nothing
-
-    # Embeded image viewer panel
-    child_imview = ImageViewer(Dict("name"=>component_config["name"]))
-    child_imview_draw = gui_panel(ImageViewer, Dict{String,Any}(
-        "name"=>component_config["name"]
-    ); ischild=true, child_size=(-1,-30))
 
     first_view = true
 
@@ -146,6 +135,10 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
             return
         end
 
+        if !isnothing(err_msg)
+            CImGui.TextWrapped(err_msg)
+        end
+
         @c CImGui.Checkbox("Coarse", &dm_tt_coarse);
 
 
@@ -162,18 +155,18 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
 
         tt_range = Float32( dm_tt_coarse ? 750 : 150)
 
-        if CImGui.CollapsingHeader("LOWFS")
+        # if CImGui.CollapsingHeader("LOWFS")
 
-            for (modename, modenum) in zip(modenames, 1:size(dmoff.lmodemat,1))
-                CImGui.Text("pseudo-$modename (nm RMS)")
-                t = lmode_amplitudes_nm_rms[modenum]
-                changed |= @c CImGui.SliderFloat("##pseudo-$modename", &t, -tt_range, tt_range)
-                CImGui.SameLine()
-                changed |=  @c CImGui.InputFloat("##pseudo-$modename-num", &t)
-                lmode_amplitudes_nm_rms[modenum] = t
-            end
-        end
-        if CImGui.CollapsingHeader("Pure Zernikes")
+        #     for (modename, modenum) in zip(modenames, 1:size(dmoff.lmodemat,1))
+        #         CImGui.Text("pseudo-$modename (nm RMS)")
+        #         t = lmode_amplitudes_nm_rms[modenum]
+        #         changed |= @c CImGui.SliderFloat("##pseudo-$modename", &t, -tt_range, tt_range)
+        #         CImGui.SameLine()
+        #         changed |=  @c CImGui.InputFloat("##pseudo-$modename-num", &t)
+        #         lmode_amplitudes_nm_rms[modenum] = t
+        #     end
+        # end
+        if CImGui.CollapsingHeader("Zernike")
 
             for (modename, modenum) in zip(modenames, 1:size(dmoff.modemat,1))
                 CImGui.Text("$modename (nm RMS)")
@@ -193,7 +186,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
             CImGui.Text("Phase (arb + 0 or pi/4)")
             changed |= CImGui.SliderInt("##Phasei", phase_i, 1, 2)
             CImGui.Text("Amplitude (nm rms)")
-            changed |= CImGui.SliderFloat("##Amp", famp, -800, 800)
+            changed |= CImGui.SliderFloat("##Amp", famp, -200, 200)
             
 
             if changed
@@ -245,7 +238,18 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
             @views cmd .+= famp[] .* dmoff.fmodemat[fmode_i,:]
 
             cmd .+= manual_offset
-            setact!(dmoff,cmd)
+            ok = true
+            for v in cmd
+                if !(-0.5 < v < 0.5)
+                    ok = false
+                end
+            end
+            if ok
+                setact!(dmoff,cmd)
+                err_msg = nothing
+            else
+                err_msg = "Provided DM command exceeds valid range (-0.5 < cmd < 0.5)."
+            end
         end
 
         CImGui.End()

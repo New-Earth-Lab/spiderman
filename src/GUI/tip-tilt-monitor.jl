@@ -103,8 +103,8 @@ function gui_panel(::Type{TTMonitor}, component_config)
             ImPlot.ImPlotFlags_Equal |
             ImPlot.ImPlotFlags_NoLegend
         )
-            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "tip")
-            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "tilt")
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "tip",ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "tilt",ImPlot.ImPlotAxisFlags_AutoFit)
             ImPlot.SetupFinish()
             ImPlot.SetNextLineStyle(ImVec4(1f0, 1.f0, 1f0, 0.25f0););
 
@@ -125,8 +125,8 @@ function gui_panel(::Type{TTMonitor}, component_config)
             "##ttmon-timeseries",
             plotsize,
         )
-            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "time (iter)")
-            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "amplitude (arb.)")
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "time (iter)",ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "amplitude (arb.)",ImPlot.ImPlotAxisFlags_AutoFit)
             ImPlot.SetupFinish()
             @views ImPlot.PlotLine("tip", ax, ttmon.mode_history[:,1], size(ttmon.mode_history,1));
             @views ImPlot.PlotLine("tilt", ax, ttmon.mode_history[:,2], size(ttmon.mode_history,1))

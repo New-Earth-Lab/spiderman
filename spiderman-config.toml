@@ -35,6 +35,14 @@
     auto_show = true
 
 
+[[component]]
+    type = "ImageFeed"
+    name = "GoldEye (raw)"
+    input-channel = "aeron:ipc"
+    input-stream = 2013
+    auto_show = true
+
+
 # [[component]]
 #     type="ImageFeed"
 #     name="CRED2 (uncalibrated)"
@@ -60,7 +68,70 @@
     input-channel="aeron:ipc"
     input-stream=1016
     auto_show = true
+
+
+
+[[component]]
+    type="ImageFeed"
+    name="CRED2 (raw)"
+    input-channel="aeron:ipc"
+    input-stream=2011
+    auto_show = true
+
+    # crop = true
+    # cropx = [147,467]
+    # cropy = [67,387]
+
     
+
+[[component]]
+    type="RTCBlock1"
+    name="CRED2 (raw) control"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=601
+    status-channel="aeron:ipc"
+    status-stream=602
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["dark", "array", "/mnt/datadrive/DATA/CRED2-SCC/dark.fits"],
+        ["flat", "array", "/mnt/datadrive/DATA/CRED2-SCC/flat.fits"],
+    ]
+
+
+
+[[component]]
+    type="RTCBlock1"
+    name="Goldeye (raw) control"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=701
+    status-channel="aeron:ipc"
+    status-stream=702
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["dark", "array", "/mnt/datadrive/DATA/Goldeye/dark.fits"],
+        ["flat", "array", "/mnt/datadrive/DATA/Goldeye/flat.fits"],
+    ]
+
 
 [[component]]
     type="ImageFeed"
@@ -120,15 +191,15 @@
     idle-timeout = 0.01
 
 
-[[component]]
-    type="DMFeed"
-    name="LOWFS Prediction"
-    valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
-    actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
-    input-channel="aeron:ipc"
-    input-stream=9001
-    auto_show = true
-    idle-timeout = 0.01
+# [[component]]
+#     type="DMFeed"
+#     name="LOWFS Prediction"
+#     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
+#     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
+#     input-channel="aeron:ipc"
+#     input-stream=9001
+#     auto_show = false
+#     idle-timeout = 0.01
 
 
 
@@ -182,15 +253,15 @@
     input-channel="aeron:ipc"
     input-stream=7000
     auto_show = true
-    idle-timeout = 10.0
+    idle-timeout = 1.0
 
 
 [[component]]
     type="DMOffsetTool"
     name="DM Offset Tool"
     zern-modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
-    lowfs-modes="/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"
-    fourier-modes="/mnt/datadrive/DATA/SCC/modemat-all.fits"
+    lowfs-modes="/mnt/datadrive/DATA/LOWFS/lowfs-modes-to-actus.fits"
+    fourier-modes="/mnt/datadrive/DATA/SCC/fourier-modes-to-actus.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     output-channel="aeron:ipc"
@@ -202,14 +273,14 @@
     type="DMOffsetTool"
     name="DM CalibOffset Tool"
     zern-modes="/mnt/datadrive/DATA/dm/zern-to-actus.fits"
-    lowfs-modes="/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"
-    fourier-modes="/mnt/datadrive/DATA/SCC/modemat-all.fits"
+    lowfs-modes="/mnt/datadrive/DATA/LOWFS/lowfs-modes-to-actus.fits"
+    fourier-modes="/mnt/datadrive/DATA/SCC/fourier-modes-to-actus.fits"
     actuator-map="/mnt/datadrive/DATA/dm/BAX307-actu-map.fits"
     valid-actuator-map="/mnt/datadrive/DATA/dm/BAX307-valid-actu-map.fits"
     output-channel="aeron:ipc"
     output-stream=104
     output-key="calibration"
-    auto_show = true
+    auto_show = false
 
 
 [[component]]
@@ -256,13 +327,14 @@
     ]
     event-fields = [
         # name, type, default
-        ["gain", "Float64", "0.1"],
-        ["leak", "Float64", "0.01"],
+        # ["gain", "Float64", "0.03"],
+        ["leak", "Float64", "0.000"],
         ["clip", "Float64", "0.2"],
-        ["modes_to_actus", "array", "/mnt/datadrive/DATA/SCC/modes-to-actus.fits"],
-        ["actus_to_modes", "array", "/mnt/datadrive/DATA/SCC/actus-to-modes.fits"],
-        ["invis_modes_to_actus", "array", "/mnt/datadrive/DATA/SCC/invis-modes-to-actus.fits"],
-        ["actus_to_invis_modes", "array", "/mnt/datadrive/DATA/SCC/actus-to-invis-modes.fits"],
+        ["gain", "array", "/mnt/datadrive/DATA/SCC/default-gains.fits"],
+        ["modes_to_actus", "array", "/mnt/datadrive/DATA/SCC/valid-modes-to-actus.fits"],
+        ["actus_to_modes", "array", "/mnt/datadrive/DATA/SCC/valid-actus-to-modes.fits"],
+        ["invis_modes_to_actus", "array", "/mnt/datadrive/DATA/SCC/invalid-modes-to-actus.fits"],
+        ["actus_to_invis_modes", "array", "/mnt/datadrive/DATA/SCC/invalid-actus-to-modes.fits"],
 
     ]
 
@@ -289,9 +361,37 @@
         ["cog_image_mask", "array",  "/mnt/datadrive/DATA/LOWFS/cog-image-mask.fits"],
         ["reference_image", "array", "/mnt/datadrive/DATA/LOWFS/reference-image.fits"],
         ["image_to_modes", "array",  "/mnt/datadrive/DATA/LOWFS/image-to-modes.fits"],
-        ["modes_to_actus", "array",  "/mnt/datadrive/DATA/LOWFS/modes-to-actus.fits"],
+        ["modes_to_actus", "array",  "/mnt/datadrive/DATA/LOWFS/lowfs-modes-to-actus.fits"],
         ["slopes_to_TT", "array",    "/mnt/datadrive/DATA/LOWFS/slopes-to-TT.fits"],
         ["cog_reference", "array-paddle",   "/mnt/datadrive/DATA/LOWFS/cog-reference.fits"],
+    ]
+
+
+[[component]]
+    type="RTCBlock1"
+    name="SCC"
+    auto_show=true
+    event-channel="aeron:ipc?term-length=1024m"
+    event-stream=501
+    status-channel="aeron:ipc?term-length=1024m"
+    status-stream=502
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default,
+        ["fulldh", "Bool", "0"],
+        ["reference_image", "array", "/mnt/datadrive/DATA/SCC/reference-image.fits"],
+        ["image_mask", "array", "/mnt/datadrive/DATA/SCC/mask-overall.fits"],
+        ["image_mask_phase", "array", "/mnt/datadrive/DATA/SCC/mask-phase-correction.fits"],
+        ["image_mask_amplitude", "array", "/mnt/datadrive/DATA/SCC/mask-amplitude-correction.fits"],
+        ["image_to_actus", "array", "/mnt/datadrive/DATA/SCC/scc-image-to-actus.fits"],
     ]
 
 
@@ -337,10 +437,165 @@
     auto_show = true
 
 
-# [[component]]
-#     name = "Integrator Control"
-#     type = "Integrator"
-#     url-scc = "http://localhost:8009"
-#     url-lowfs = "http://localhost:8008"
-#     url-integ = "http://localhost:8010"
-#     auto_show = true
+[[component]]
+    type="RTCBlock1"
+    name="SuperK Laser"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=901
+    status-channel="aeron:ipc"
+    status-stream=902
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Connect",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["Interlock", "Bool", "0"],
+        ["Emission", "Bool", "0"],
+        ["serial_port", "String", "/dev/ttyUSB0"],
+        ["baudrate", "Int", "115200"],
+        ["master_id", "Int", "0xA2"],
+    ]
+
+
+[[component]]
+    type="ArchiverComponent"
+    name="Archiver Service"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=201
+    status-channel="aeron:ipc"
+    status-stream=202
+
+    # TODO: this should definitely be UDP
+    metadata-channel="aeron:ipc"
+    metadata-stream=10
+    
+    [[component.stream]]
+        name = "GoldEye"
+        input-channel = "aeron:ipc"
+        input-stream = 1013
+    [[component.stream]]
+        name = "CRED2 (SCC)"
+        input-channel = "aeron:ipc"
+        input-stream = 1011
+    [[component.stream]]
+        name = "DM User Offset"
+        input-channel = "aeron:ipc"
+        input-stream = 104
+    [[component.stream]]
+        name = "DM Summed Command"
+        input-channel = "aeron:ipc"
+        input-stream = 105
+    [[component.stream]]
+        name="CRED2 (IFTS)"
+        input-channel="aeron:ipc"
+        input-stream=1016
+    [[component.stream]]
+        name="Telemetry (IFTS)"
+        input-channel="aeron:ipc"
+        input-stream=905
+
+[[component]]
+    type="RTCBlock1"
+    name="FTS Controller"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=903
+    status-channel="aeron:ipc"
+    status-stream=904
+    
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Connect",
+        "StatusRequest",
+    ]
+    event-fields = [
+        # name, type, default
+        ["lower_scan_limit_mm", "Float64", "-4.00"],
+        ["upper_scan_limit_mm", "Float64", "4.00"],
+        ["scan_speed_mm_per_s", "Float64", "0.360"],
+        ["serial_port", "String", "/dev/ttyACM3"],
+        ["baudrate", "Int", "115200"],
+    ]
+
+[[component]]
+    type="FTSMonitor"
+    name="FTS Monitor"
+    history-length=10000
+    input-channel="aeron:ipc"
+    input-stream=905
+    auto_show = true
+
+
+
+[[component]]
+    type="RTCBlock1"
+    name="Performance Monitor (GoldEye cal) control"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=921
+    status-channel="aeron:ipc"
+    status-stream=922
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        ["q25", "Float64", "0.0"],
+        ["q50", "Float64", "0.0"],
+        ["q75", "Float64", "0.0"],
+        ["q95", "Float64", "0.0"],
+        ["q99", "Float64", "0.0"],
+        ["q999", "Float64", "0.0"],
+        ["q9999", "Float64", "0.0"],
+    ]
+[[component]]
+    type="PerfMon"
+    name="Performance Monitor (GoldEye cal)"
+    history-length=10000
+    input-channel="aeron:ipc"
+    input-stream=923
+    auto_show = true
+
+[[component]]
+    type="RTCBlock1"
+    name="Performance Monitor (Full pipeline) control"
+    auto_show=true
+    event-channel="aeron:ipc"
+    event-stream=931
+    status-channel="aeron:ipc"
+    status-stream=932
+    event-buttons = [
+        "Exit",
+        "Reset",
+        "Stop",
+        "Play",
+        "Pause",
+        "StatusRequest",
+    ]
+    event-fields = [
+        ["q25", "Float64", "0.0"],
+        ["q50", "Float64", "0.0"],
+        ["q75", "Float64", "0.0"],
+        ["q95", "Float64", "0.0"],
+        ["q99", "Float64", "0.0"],
+        ["q999", "Float64", "0.0"],
+        ["q9999", "Float64", "0.0"],
+    ]
+[[component]]
+    type="PerfMon"
+    name="Performance Monitor (Full pipeline)"
+    history-length=10000
+    input-channel="aeron:ipc"
+    input-stream=933
+    auto_show = true
