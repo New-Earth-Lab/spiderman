@@ -2,98 +2,58 @@
 Package of various graphical user interface tools.
 """
 
-# Utillity functions
+# Import the new CImGui API
+import CImGui as ig
+import ModernGL
+import GLFW
+using CImGui
+using CImGui.lib  # For ImGui types
+using CImGui: CSyntax
+using Printf
+using Base.Threads
+using Revise
+
+using CSyntax
+# Note: ImPlot integration would need to be updated separately
+# For now, we'll comment out ImPlot-specific functionality
+
+# Utility functions
 nonans(array) = all(isfinite, array)
 
-
 # Helper functions
-
 function disabled_button(label)
-    # CImGui.PushStyleVar(ImGuiStyleVar_Alpha, CImGui.GetStyle().Alpha * 0.5)
-    CImGui.PushStyleVar(ImGuiStyleVar_Alpha, 0.5)
-    CImGui.Button(label)
-    CImGui.PopStyleVar()
+    ig.PushStyleVar(ig.ImGuiStyleVar_Alpha, 0.5)
+    ig.Button(label)
+    ig.PopStyleVar()
 end
 
 function disabled_loop_starting_button()
     disabled_button("Start Loop")
-    CImGui.SameLine()
-    CImGui.Text("Loop is starting...")
+    ig.SameLine()
+    ig.Text("Loop is starting...")
 end
-
 
 function disabled_loop_stopping_button()
     disabled_button("Stop Loop")
-    CImGui.SameLine()
-    CImGui.Text("Loop is stopping...")
+    ig.SameLine()
+    ig.Text("Loop is stopping...")
 end
 
-using ImGuiGLFWBackend
-using ImGuiGLFWBackend.LibCImGui
-using ImGuiGLFWBackend.LibGLFW
-using ImGuiOpenGLBackend
-using ImGuiOpenGLBackend.ModernGL
-
-using CImGui
-using CImGui.CSyntax
-using CImGui.CSyntax.CStatic
-
-using Printf
-using ImPlot
-# using ImPlot.LibCImPlot
-using CImGui.LibCImGui
-LibCImPlot = LibCImGui
-
 const gui_active = Ref(false)
-
-using Base.Threads
-
-using Revise
-# using FFTW
-# using LinearAlgebra
-# using DelimitedFiles
-# using Statistics
-# using Dates
-# using Printf
-
 
 # Fallback panel 
 function gui_panel(::Any, config)
     # Draw an empty panel for devices without a GUI component
-    return function(device=nothing,loop_status=nothing,visible=nothing)
+    return function(device=nothing, loop_status=nothing, visible=nothing)
         title = config["name"]
-        # @show device title
-        CImGui.Begin(title, C_NULL)
+        ig.Begin(title)
         T = string(config["type"])
-        CImGui.Text("GUI panel for $T not implemented.")
-        CImGui.End()
+        ig.Text("GUI panel for $T not implemented.")
+        ig.End()
     end
 end
 
-
-# include("dm-plot.jl")
-
-
-# include("camera.jl")
-# include("powerbar.jl")
-# include("brightsource.jl")
-# include("chopper.jl")
-# include("dm.jl")
-# include("aeron-dm-feed.jl")
-# include("pressuregauge.jl")
-# include("phase-screens.jl")
-# include("iftscontroller.jl")
-
-# include("chopped-images.jl")
-# include("cdi.jl")
-# include("scc.jl")
-# include("lowfs.jl")
-# include("spottracking.jl")
-# include("integrator.jl")
-# include("image-integrator.jl")
-# include("stats.jl")
-# include("turbulence.jl")
-
+# Include your custom panels here
 include("main-panel.jl")
 include("imview.jl")
 include("image-feed.jl")
@@ -107,29 +67,47 @@ include("integrator.jl")
 include("block.jl")
 include("archiver.jl")
 
-
 # Background for whole GUI
-const clear_color = Cfloat[0.2, 0.2, 0.2, 1.0] #Cfloat[0.0, 0.15294117647058825, 0.25098039215686274, 1.00]
-const good_color =  Cfloat[0.15294117647058825, 0.6588235294117647, 0.1607843137254902, 1.0, ]
+const clear_color = Cfloat[0.2, 0.2, 0.2, 1.0]
+const good_color = Cfloat[0.15294117647058825, 0.6588235294117647, 0.1607843137254902, 1.0]
 const dimmed_color = Cfloat[0.6, 0.6, 0.6, 1.0]
 const active_color = Cfloat[0.6, 1.0, 0.6, 1.0]
-const bad_color = 0xCF2121FF
+const bad_color = UInt32(0xCF2121FF)
 
 data_path = nothing
 
-
 const component_panel_map = Dict{Any, Any}()
 
-global font_default
-global font_small
+# Global state for the GUI
+mutable struct GuiState
+    trigger_revision::Bool
+    world::UInt64
+    time_info::NamedTuple
+    alloc_hist::Vector{Float32}
+    time_start::Float64
+    time_hist::Vector{Float32}
+    frame_draw_time::Float64
+    frame_i::Int
+    font_default::Ptr{ImFont}
+    font_small::Ptr{ImFont}
+    font_large::Ptr{ImFont}
+end
 
-# HOT RELOADING
-# The VENOMS GUI supports hot code reloading powered by Revise.jl
-# Inside the GUI, the user can click "revise" to adopt new code changes.
-# Otherwise, the running code is not affected.
-# That said, the contents of this file and the overall GUI loop below
-# do not support hot reloading. Close and re-open the GUI for your
-# changes to have effect. (can't hot reload the hot-reloader!).
+GuiState() = GuiState(
+    false,
+    Base.get_world_counter(),
+    (time=0.0, bytes=0, gctime=0.0, compile_time=0.0, recompile_time=0.0),
+    zeros(Float32, 1024),
+    0.0,
+    zeros(Float32, 1024),
+    0.0,
+    0,
+    C_NULL,
+    C_NULL,
+    C_NULL
+)
+
+const gui_state = GuiState()
 
 export spiderman
 """
@@ -137,29 +115,18 @@ export spiderman
 
 Launch the main interface for the lab software.
 If `bg=true` (default), then it will run as a separate task
-allowing you to continue using the Julia
-prompt.
-
-Note: the precompilemode flag runs the GUI for just a few frames before closing.
-This allows us to precompile the startup workload (althrough the GUI does flash on the screen).
-This is not critical functionality.
+allowing you to continue using the Julia prompt.
 """
-function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
-
+function spiderman(; bg=true, _launch_waiter_event=Event(), precompilemode=false)
     # Option to launch the GUI on a background thread
     if bg
-
         if gui_active[]
-            error("Cannot run two main GUIs silmultaneously. Close the existing window first. To force, set `SpiderMan.gui_active[] = false`")
+            error("Cannot run two main GUIs simultaneously. Close the existing window first. To force, set `SpiderMan.gui_active[] = false`")
         end
         
-        # Before returning, wait on a task that finishes after first frame appears.
-        # That ensures any error launching makes it to the REPL.
         _launch_waiter_event = Event()
-        # Ensure we stay on the main thread if launched on the main thread by using @async
         guitask = Threads.@spawn :default try
-        # guitask = @async try
-            spiderman(;bg=false, _launch_waiter_event)
+            spiderman(; bg=false, _launch_waiter_event)
         catch exception
             notify(_launch_waiter_event)
             if exception isa InterruptException
@@ -167,11 +134,10 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
             end
             println(stderr)
             println(stderr)
-            @error "Error during GUI loop" exception=(exception,catch_backtrace())  _module=nothing _file=nothing _line=0
+            @error "Error during GUI loop" exception=(exception, catch_backtrace()) _module=nothing _file=nothing _line=0
             println(stderr)
         end
 
-        # This wait ensures the GUI is shown and visible before returning to the REPL
         wait(_launch_waiter_event)
         return guitask
     end
@@ -181,393 +147,281 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
         data_path = config("general", "data_path")
     end
 
-    # We create a panel for each component in the config file.
-    # This dictionary tracks what panel belongs to what
-    # component.
-    # component_panel_map = Dict{Any, Union{Nothing,Function}}()
-
     if gui_active[]
-        error("Cannot run two main GUIs silmultaneously. Close the existing window first.")
+        error("Cannot run two main GUIs simultaneously. Close the existing window first.")
     end
 
-
-    # Track GUI frame rate and application allocation rate.
-    time_info = @timed nothing
-    alloc_hist = zeros(Float32, 1024)
-    time_start = 0.0
-    time_hist = zeros(Float32, 1024)
-    frame_draw_time = 0.0
-
-
-    # create contexts
-    imgui_ctx = igCreateContext(C_NULL)
-
-    window_ctx = ImGuiGLFWBackend.create_context()
-    window = ImGuiGLFWBackend.get_window(window_ctx)
-
-    gl_ctx = ImGuiOpenGLBackend.create_context()
-    if gl_ctx == C_NULL
-        error("Could not create OpenGL context")
-    end
-
-    # Set to 1 (default) to enable framerate vsync or 0 to run at maximum speed
-    glfwSwapInterval(0)
-
-
-    # enable docking and multi-viewport
-    io = igGetIO()
-    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ImGuiConfigFlags_DockingEnable
-    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ImGuiConfigFlags_ViewportsEnable
-    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ImGuiConfigFlags_NavEnableKeyboard
+    # Set backend
+    ig.set_backend(:GlfwOpenGL3)
+    
+    # Create context
+    ctx = ig.CreateContext()
+    p_ctx =ImPlot.CreateContext() 
+    
+    # Configure ImGui
+    io = ig.GetIO()
+    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_DockingEnable
+    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_ViewportsEnable
+    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_NavEnableKeyboard
     unsafe_store!(io.ConfigWindowsMoveFromTitleBarOnly, true)
     unsafe_store!(io.ConfigDragClickToInputText, true)
-    # Draws a usual OS window border around each floating window:
-    # unsafe_store!(io.ConfigViewportsNoDecoration, false)
-    # set style
-    igStyleColorsDark(C_NULL)
-
-    # Specify a custom font
+    
+    # Set style
+    ig.StyleColorsDark()
+    
+    # Add fonts
     fonts = unsafe_load(io.Fonts)
-    # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/NotoSansMono-Regular.ttf"), 30)
-    # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Sweet16mono.ttf"), 18)
-    global font_default
-    global font_small
-    global font_large
-    font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 14)
-    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 8)
-    font_large = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
-
-
-    # init
-    ImGuiGLFWBackend.init(window_ctx)
-    ImGuiOpenGLBackend.init(gl_ctx)
-
-    pctx = ImPlot.CreateContext()
-    ImPlot.SetImGuiContext(imgui_ctx)
-
+    gui_state.font_default = ig.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 14)
+    gui_state.font_small = ig.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 8)
+    gui_state.font_large = ig.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
+    
     gui_active[] = true
-
-    # How long should we sleep after each frame to achieve 60fps?
-    sleep_delta_t = 0.000
-    # We start this at zero and updatebased on the frame rate to aim for 60fps
-
-    frame_i = 0
-    trigger_revision = false
-    world = Base.get_world_counter() 
+    
+    # Reset frame counter
+    gui_state.frame_i = 0
+    gui_state.trigger_revision = false
+    gui_state.world = Base.get_world_counter()
+    
     try
-        while glfwWindowShouldClose(window) == GLFW_FALSE
-            glfwPollEvents()
-
-            # new frame
-            ImGuiOpenGLBackend.new_frame(gl_ctx)
-            ImGuiGLFWBackend.new_frame(window_ctx)
-            igNewFrame()       
-
-            # During the first sequence of frames, we set things in motion one frame at a time
-            # so that the user sees something nice.
-            # We first: set the title, size, and position.
-            # Then, draw a loading screen
-            # From then on, draw the actual frame contents. The first time this happens
-            # we might hang while we compile code, so it's nice to show the loading screen first.
-            if frame_i == 0
-                
-                # This should not be so difficult to set basic window properties
-                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowTitle(igGetMainViewport(), convert(Ptr{Int8}, pointer("SPIDER-MAN")))
-                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(3840,2048))
-                # ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowPos(igGetMainViewport(), ImVec2(10,30))
-            end
-
+        # Use the new render function with a callback
+        ig.render(ctx; 
+            window_size=(3840, 2048), 
+            window_title="SPIDER-MAN",
+            opengl_version=v"3.3",  # Specify OpenGL version if needed
+            clear_color=clear_color,
+            on_exit=() -> ImPlot.DestroyContext(p_ctx)
+        ) do
+            # This callback is called for each frame
+            handle_frame()
             
-            if trigger_revision && frame_i == 2
-                @info "Revising code..." 
-                Revise.revise(throw=true)   # Let errors bubble up and crash the GUI
-                @info "Revision complete" 
-                # And store the current world age. All calls in the GUI will be locked to this world age
-                # until the next recompile is triggered.
-                world = Base.get_world_counter()
-                trigger_revision = false
-            end
-
-            # Wait for loading screen to appear, then populate the component maps
-            if frame_i == 4 
-                Base.invoke_in_world(world, fill_component_panel_map!, component_panel_map)
-            end
-            # Notify that we are done launching the guitask
-            if frame_i == 5
-                notify(_launch_waiter_event)
-            end
-            # If precompiling, break out as soon as we hit the main
-            # code paths.
-            if frame_i == 6 && precompilemode
-                return
-            end
-            # Main normal drawing loop
-            frame_i += 1
-            time_start = time_ns()
-            time_info = @timed begin
-
-
-                # Some windows from the GUI toolkit demonstrating various components in action.
-                # Uncomment to view and play around with them.
-                # igShowDemoWindow(Ref(true))
-                # igShowMetricsWindow(Ref(true))
-                # ImPlot.LibCImPlot.ShowDemoWindow(Ref(true))
-                
-                # Package up these tracking state variables
-                info = (time_info, alloc_hist, time_start, time_hist, frame_draw_time, frame_i, component_panel_map)
-                
-                # Hot-reloading:
-                # We ensure the GUI is locked to a given world age so that if the user edits the code
-                # and triggeres top-level evaluation (e.g. running something on the REPL) the GUI
-                # cannot be affected. 
-                # If a recompile is requested, we run revise after the loop iteration and bump the world age 
-                # cleanly.
-                trigger_revision |= Base.invoke_in_world(world, draw_loop, info)
-            end
-            curr_time = time_ns()
-            frame_draw_time = curr_time - time_start
-                
-
-            # rendering
-            igRender()
-            glfwMakeContextCurrent(window)
-            w_ref, h_ref = Ref{Cint}(0), Ref{Cint}(0)
-            glfwGetFramebufferSize(window, w_ref, h_ref)
-            display_w, display_h = w_ref[], h_ref[]
-            glViewport(0, 0, display_w, display_h)
-            glClearColor(clear_color...)
-            glClear(GL_COLOR_BUFFER_BIT)
-            ImGuiOpenGLBackend.render(gl_ctx)
-
-            if unsafe_load(igGetIO().ConfigFlags) & ImGuiConfigFlags_ViewportsEnable == ImGuiConfigFlags_ViewportsEnable
-                backup_current_context = glfwGetCurrentContext()
-                igUpdatePlatformWindows()
-                GC.@preserve gl_ctx igRenderPlatformWindowsDefault(C_NULL, pointer_from_objref(gl_ctx))
-                glfwMakeContextCurrent(backup_current_context)
-            end
-
-            glfwSwapBuffers(window)
-
-
-            # Show loading splash screen while we revise
-            if trigger_revision
-                # reset to the beginning of our loading/displaying sequence
-                frame_i = 2
-                @info "Triggering revision"
-            end
-            # We need to yield control so that other taks on the same thread can work.
-            # Typically we run the GUI on thread 1 (the interactive thread) which is the
-            # same thread that hosts the REPL.
-            # So if we don't yield, the REPL will hang.
-            # That said, yielding once per frame is pretty short. Oftentimes the GUI
-            # will yield, the REPL will print a few characters, then we'll sit here
-            # spinning until the the next frame/sync comes in. 
-            # So the best strategy is to yield with a sleep to explicitly say that
-            # the REPL can run for a little while. In theory waiting until we absolutely 
-            # have to generate the next frame can actually reduce GUI latency by a sub-frame 
-            # amount. Some video games do this. But that's not the main reason here.
-            # yield()
-            fps = unsafe_load(CImGui.GetIO().Framerate)
-            delta = 1/60 - 1/fps
-            sleep_delta_t = sleep_delta_t + 0.05*delta
-            sleep_delta_t = clamp(sleep_delta_t, 0, 1)
-            sleep(sleep_delta_t)
+            # Return true to continue, false to exit
+            return !gui_state.trigger_revision || gui_state.frame_i < 7
         end
+        
+        # Handle revision if needed
+        if gui_state.trigger_revision && gui_state.frame_i >= 7
+            # Close and restart for revision
+            gui_active[] = false
+            @info "Restarting GUI after revision..."
+            spiderman(; bg=bg, _launch_waiter_event, precompilemode)
+        end
+        
     finally
-        # Run when the GUI exits for any reason
         gui_active[] = false
-
-        ImGuiOpenGLBackend.shutdown(gl_ctx)
-        ImGuiGLFWBackend.shutdown(window_ctx)
-        ImPlot.DestroyContext(pctx)
-        igDestroyContext(imgui_ctx)
-        glfwDestroyWindow(window)
+        # Note: ImPlot context cleanup would go here if using ImPlot
     end
 end
 
-
-
-# We isloate all of the rendering into this function so that we can revise it.
-# Otherwise, if we modify the draw loop while the code is running and trigger
-# revise bad things happen.
-# All of the variables that need to be tracked across renders are passed in through the `info`
-# tuple for context.
-# If a revise needs to be triggered, this function returns true to inform the render loop
-# to pause and recompile.
-function draw_loop(info)
-
-    time_info, alloc_hist, time_start, time_hist, frame_draw_time, frame_i, component_panel_map = info
-    trigger_revision = false
-
-
-    igDockSpaceOverViewport(igGetMainViewport(),C_NULL,C_NULL);    
-
-    ImPlot.PushStyleColor(ImPlot.ImPlotCol_FrameBg, ImVec4(0,0,0,0));
-    ImPlot.PushStyleColor(ImPlot.ImPlotCol_PlotBg, ImVec4(0,0,0,0));
-
-    if CImGui.BeginMainMenuBar()
-        if CImGui.BeginMenu("Application")
-            if CImGui.MenuItem("Reload config file")
-                config("general", refresh=true)
-                availcomponents(refresh=true)
-                # This special way of calling this function ensures
-                # that we pick up changes if the user edits the code.
-                fill_component_panel_map!(component_panel_map)
-            end
-            if CImGui.MenuItem("Export config file")
-                writeconfig()
-            end
-            if CImGui.MenuItem("Revise")
-                trigger_revision = true
-            end
-            if CImGui.MenuItem("Close windows (leave Julia running)")
-                CImGui.EndMenu()
-                CImGui.EndMenuBar()
-                throw(InterruptException())
-            end
-            if CImGui.MenuItem("Quit")
-                exit();
-            end
-            CImGui.EndMenu()
-        end
-        if CImGui.BeginMenu("Tools")
-            # for (k, v) in pairs(component_panel_map)
-            for k in sort(collect(keys(component_panel_map)),by=k->k[2])
-                v = component_panel_map[k]
-                (type, name) = k
-                (func, visible) = v
-                if CImGui.MenuItem(name, C_NULL, visible[])
-                    component_panel_map[k] = [func, Ref(!visible[]), Ref(false)]
-                end
-            end
-            CImGui.EndMenu()
-        end
-
-        CImGui.SameLine(CImGui.GetWindowWidth()-100)
-        fps = unsafe_load(CImGui.GetIO().Framerate)
-        CImGui.Text(@sprintf("GUI FPS: %3.0f",fps))
-        CImGui.EndMainMenuBar()
+function handle_frame()
+    gui_state.frame_i += 1
+    gui_state.time_start = time_ns()
+    
+    # Notify launch waiter after GUI is visible
+    if gui_state.frame_i == 5 && isdefined(Main, :_launch_waiter_event)
+        notify(Main._launch_waiter_event)
     end
-
-    # The main gui might freeze momentarily when lots of new panel functions
-    # get compiled (if not properly precompiled). Therefore, show a small
-    # splash screen for a few frames first, so that if it freezes, people
-    # know that things are still loading.
-    if frame_i < 5
-        # p = CImGui.GetWindowPos()
-        # io = igGetIO()
-        # d = unsafe_load(io.DisplaySize)
-        # CImGui.SetNextWindowPos(ImVec2(0,0))
-        # CImGui.SetNextWindowSize(ImVec2(d.x-150, d.y-150))
-        CImGui.SetNextWindowFocus()
-        CImGui.Begin("##loading")
-        CImGui.TextWrapped("Loading...")
-        CImGui.End()
-    else
-
-        # show the big demo window
-        # ImPlot.LibCImPlot.ShowDemoWindow(true)
-
-        # Show any components 
-        @lock to_show_component_lock begin
-            for (component_to_show, visible) in to_show_component
-                @info "Showing component" name=component_to_show visible
-                for key in keys(component_panel_map)
-                    (component_type, component_name) = key
-                    if component_name == component_to_show
-                        component_panel_map[key][2][] = visible
-                        component_panel_map[key][3][] = true
-                        break
-                    end
+    
+    # Exit early if precompiling
+    if gui_state.frame_i == 6 && isdefined(Main, :precompilemode) && Main.precompilemode
+        return false
+    end
+    
+    # Handle revision
+    if gui_state.trigger_revision && gui_state.frame_i == 2
+        @info "Revising code..."
+        Revise.revise(throw=true)
+        @info "Revision complete"
+        gui_state.world = Base.get_world_counter()
+        gui_state.trigger_revision = false
+    end
+    
+    # Fill component panel map after loading screen
+    if gui_state.frame_i == 4
+        Base.invoke_in_world(gui_state.world, fill_component_panel_map!, component_panel_map)
+    end
+    
+    # Main drawing
+    gui_state.time_info = @timed begin
+        # Create docking space
+        ig.DockSpaceOverViewport()
+        
+        # Note: ImPlot style pushing would go here
+        
+        # Draw main menu bar
+        if ig.BeginMainMenuBar()
+            if ig.BeginMenu("Application")
+                if ig.MenuItem("Reload config file")
+                    config("general", refresh=true)
+                    availcomponents(refresh=true)
+                    fill_component_panel_map!(component_panel_map)
                 end
+                if ig.MenuItem("Export config file")
+                    writeconfig()
+                end
+                if ig.MenuItem("Revise")
+                    gui_state.trigger_revision = true
+                end
+                if ig.MenuItem("Close windows (leave Julia running)")
+                    ig.EndMenu()
+                    ig.EndMainMenuBar()
+                    return false  # Signal to close
+                end
+                if ig.MenuItem("Quit")
+                    exit()
+                end
+                ig.EndMenu()
             end
-            empty!(to_show_component)
+            
+            if ig.BeginMenu("Tools")
+                for k in sort(collect(keys(component_panel_map)), by=k->k[2])
+                    v = component_panel_map[k]
+                    (type, name) = k
+                    (func, visible) = v
+                    if ig.MenuItem(name, C_NULL, visible[])
+                        component_panel_map[k] = [func, Ref(!visible[]), Ref(false)]
+                    end
+                end
+                ig.EndMenu()
+            end
+            
+            ig.SameLine(ig.GetWindowWidth() - 100)
+            fps = unsafe_load(ig.GetIO().Framerate)
+            ig.Text(@sprintf("GUI FPS: %3.0f", fps))
+            ig.EndMainMenuBar()
         end
+        
+        # Show loading screen for first few frames
+        if gui_state.frame_i < 5
+            ig.SetNextWindowFocus()
+            ig.Begin("##loading")
+            ig.TextWrapped("Loading...")
+            ig.End()
+        else
+            # Show components
+            show_components()
+            
+            # Draw main panel
+            info = (
+                gui_state.time_info,
+                gui_state.alloc_hist,
+                gui_state.time_start,
+                gui_state.time_hist,
+                gui_state.frame_draw_time,
+                gui_state.frame_i,
+                component_panel_map
+            )
+            Base.invoke_in_world(gui_state.world, main_panel_draw, info)
+        end
+        
+        # Note: ImPlot style popping would go here
+    end
+    
+    curr_time = time_ns()
+    gui_state.frame_draw_time = curr_time - gui_state.time_start
+    
+    # Reset frame counter if revising
+    if gui_state.trigger_revision
+        gui_state.frame_i = 2
+        @info "Triggering revision"
+    end
+    
+    return true  # Continue rendering
+end
 
-        active = activecomponents()
-        for component_config in availcomponents()
-            component = nothing
-            for maybe_component in active
-                if name(maybe_component) == component_config["name"]
-                    component = maybe_component
-                end
-            end            
-            key = (component_config["type"], component_config["name"])
-            if haskey(component_panel_map, key) && !isnothing(component_panel_map[key]) && component_panel_map[key][2][] # set to visible
-                if component_panel_map[key][3][]
-                    CImGui.SetNextWindowFocus()
-                    component_panel_map[key][3][] = false
-                end
-                try
-                    component_panel_map[key][1](component, component_panel_map[key][2])
-                catch err
-                    if err isa InterruptException
-                        rethrow(err)
-                    end
-                    bt = catch_backtrace()
-                    bts = sprint(showerror, err, bt)
-                    if length(bts) > 2048
-                        bts = bts[begin:begin+2048]*"...\n error message truncated."
-                    end
-                    component_panel_map[key][1] = function(a,b=nothing,visible=nothing)
-                        CImGui.Begin(component_config["name"],)
-                        if CImGui.Button("Reset")
-                            @info "Reseting component" type=component_config["type"] name=component_config["name"]
-                            component_panel_map[key][1] = gui_panel(component_config["type"], component_config)
-                        end
-                        CImGui.TextColored(bad_color, "ERROR:")
-                        CImGui.SameLine();
-                        CImGui.TextWrapped(bts)
-                    end
-                    component_panel_map[key][2][] = true
+function show_components()
+    # Handle component showing logic
+    @lock to_show_component_lock begin
+        for (component_to_show, visible) in to_show_component
+            @info "Showing component" name=component_to_show visible
+            for key in keys(component_panel_map)
+                (component_type, component_name) = key
+                if component_name == component_to_show
+                    component_panel_map[key][2][] = visible
                     component_panel_map[key][3][] = true
-                    @error "Error in GUI panel " exception=(err, bt) name=component_config["name"] typeof(err)  _module=nothing _file=nothing _line=0
+                    break
                 end
             end
         end
-
-        main_panel_draw(info)
+        empty!(to_show_component)
     end
-
-    ImPlot.PopStyleColor(2);
-
-    return trigger_revision
+    
+    # Draw component panels
+    active = activecomponents()
+    for component_config in availcomponents()
+        component = nothing
+        for maybe_component in active
+            if name(maybe_component) == component_config["name"]
+                component = maybe_component
+            end
+        end
+        
+        key = (component_config["type"], component_config["name"])
+        if haskey(component_panel_map, key) && !isnothing(component_panel_map[key]) && component_panel_map[key][2][]
+            if component_panel_map[key][3][]
+                ig.SetNextWindowFocus()
+                component_panel_map[key][3][] = false
+            end
+            
+            try
+                component_panel_map[key][1](component, component_panel_map[key][2])
+            catch err
+                if err isa InterruptException
+                    rethrow(err)
+                end
+                handle_panel_error(err, component_config, key)
+            end
+        end
+    end
 end
 
-
-
+function handle_panel_error(err, component_config, key)
+    bt = catch_backtrace()
+    bts = sprint(showerror, err, bt)
+    if length(bts) > 2048
+        bts = bts[begin:begin+2048] * "...\n error message truncated."
+    end
+    
+    component_panel_map[key][1] = function(a, b=nothing, visible=nothing)
+        ig.Begin(component_config["name"])
+        if ig.Button("Reset")
+            @info "Resetting component" type=component_config["type"] name=component_config["name"]
+            component_panel_map[key][1] = gui_panel(component_config["type"], component_config)
+        end
+        ig.TextColored(ImVec4(0.8, 0.13, 0.13, 1.0), "ERROR:")
+        ig.SameLine()
+        ig.TextWrapped(bts)
+        ig.End()
+    end
+    component_panel_map[key][2][] = true
+    component_panel_map[key][3][] = true
+    @error "Error in GUI panel" exception=(err, bt) name=component_config["name"] typeof(err) _module=nothing _file=nothing _line=0
+end
 
 function fill_component_panel_map!(components_panel_map)
-    
-    # Keep any visibilty statuses
+    # Keep any visibility statuses
     visibles = Dict{String,Bool}()
-    for (key,value) in pairs(components_panel_map)
-        type,name = key
+    for (key, value) in pairs(components_panel_map)
+        type, name = key
         visibles[name] = value[2][]
     end
-
-
+    
     empty!(components_panel_map)
     for components_config in availcomponents()
-
         visible = get(components_config, "auto_show", false)
         if haskey(visibles, components_config["name"])
             visible = visibles[components_config["name"]]
         end
-
+        
         panel = gui_panel(components_config["type"], components_config)
         components_panel_map[
             (components_config["type"], components_config["name"])
         ] = [panel, Ref(visible), Ref(false)]
-        # function, visible
-
-        # precompile(panel, (nothing,))
-        # precompile(panel, (components_config["type"],))
     end
 end
 
 to_show_component = []
 to_show_component_lock = ReentrantLock()
+
 function showcomponent(component_name::AbstractString, visible=true)
     @lock to_show_component_lock push!(to_show_component, (component_name, visible))
 end

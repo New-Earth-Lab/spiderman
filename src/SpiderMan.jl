@@ -27,7 +27,7 @@ include("GUI/GUI.jl")
 
 include("ds9show.jl")
 
-include("precompile.jl")
+# include("precompile.jl")
 
 function __init__()
 

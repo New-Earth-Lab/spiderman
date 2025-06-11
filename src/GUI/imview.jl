@@ -461,7 +461,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
 
 
             ImPlot.PushColormap(cmap)
-            ImPlot.PlotHeatmap(vec(buffer),reverse(size(buffer))...,cmin[],cmax[]; label_fmt=C_NULL, bounds_min=bounds_min, bounds_max=bounds_max)
+            ImPlot.PlotHeatmap("img", vec(buffer),reverse(size(buffer))...,cmin[],cmax[]; label_fmt=C_NULL, bounds_min=bounds_min, bounds_max=bounds_max)
             ImPlot.PopColormap()
 
             if !isnothing(plotquery)
@@ -505,7 +505,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                     queryregion = queryview(image, plotquery, slice_position)
                     # Not working as expected, have to do it manually
                     # ImPlot.Annotation(0.5,0.5,ImVec4(1,1,1,1),ImVec2(0,0),false,)
-                    ccall((:ImPlot_Annotation_Str, LibCImGui.libcimgui), Cvoid,
+                    ccall((:ImPlot_Annotation_Str, lib.libcimgui), Cvoid,
                         (Cdouble, Cdouble, ImVec4, ImVec2, Bool, Cstring),
                         plotquery.xmin, plotquery.ymax, ImVec4(1,1,1,0.75),ImVec2(0,-15), true, show_queryregion_statistics(queryregion))
                 end
@@ -618,7 +618,7 @@ function winsizecallback4(sizedata_ptr)
     data = unsafe_load(sizedata_ptr)
     # data->DesiredSize.x = data->DesiredSize.y = (data->DesiredSize.x > data->DesiredSize.y ? data->DesiredSize.x : data->DesiredSize.y); }
     longest_dim = max(data.DesiredSize.x, data.DesiredSize.y-80)
-    newdata = LibCImGui.ImGuiSizeCallbackData(
+    newdata = lib.ImGuiSizeCallbackData(
         data.UserData,
         data.Pos,
         data.CurrentSize,
@@ -627,7 +627,7 @@ function winsizecallback4(sizedata_ptr)
     unsafe_store!(sizedata_ptr, newdata)
     return
 end
-winsizecallback_c = @cfunction(winsizecallback4, Cvoid, (Ptr{LibCImGui.ImGuiSizeCallbackData},))
+winsizecallback_c = @cfunction(winsizecallback4, Cvoid, (Ptr{lib.ImGuiSizeCallbackData},))
 
 
 
