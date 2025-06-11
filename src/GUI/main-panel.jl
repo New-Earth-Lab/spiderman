@@ -19,6 +19,7 @@ function main_panel_draw(info)
     time_hist[i] = frame_draw_time/1e6 # ns to ms
 
     if !CImGui.Begin("Overview", C_NULL,) # ImGuiWindowFlags_MenuBar
+        CImGui.End()
         return false
     end
     trigger_revision = false

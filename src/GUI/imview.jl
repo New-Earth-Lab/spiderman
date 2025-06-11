@@ -243,7 +243,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             CImGui.SetNextWindowSize((350,350), CImGui.ImGuiCond_FirstUseEver)
             CImGui.SetNextWindowSizeConstraints(ImVec2(300,300), ImVec2(1920,1080), winsizecallback_c)
             if !CImGui.Begin(component_config["name"], visible, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar)
-                return
+                return CImGui.End()
             end
         end
 
@@ -409,6 +409,22 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             # x_flags=ImPlot.ImPlotAxisFlags(ImPlot.ImPlotAxisFlags_NoLabel),#ImPlot.ImPlotAxisFlags_None|ImPlot.ImPlotAxisFlags_NoDecorations),
             # y_flags=ImPlot.ImPlotAxisFlags(ImPlot.ImPlotAxisFlags_NoLabel)
         )
+            
+
+            axis_flags = ImPlot.ImPlotAxisFlags_NoLabel | ImPlot.ImPlotAxisFlags_AutoFit
+            if buffer_changed
+                axis_cond = ImGuiCond_Always
+            else
+                axis_cond = ImGuiCond_Once
+            end
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "")
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "")
+            ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(buffer,1)), axis_cond)
+            ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(buffer,2)), axis_cond)
+            # ImPlot.PlotHeatmap(vec(actuator_nm),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; label_fmt=C_NULL)
+            ImPlot.SetupFinish()
+
+
             over_cb = winhovered && 
                 CImGui.GetMousePos().x - CImGui.GetWindowPos().x > w &&
                 20 < CImGui.GetMousePos().y - CImGui.GetWindowPos().y < h
@@ -445,20 +461,6 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
 
     
             end
-
-            axis_flags = ImPlot.ImPlotAxisFlags_NoLabel | ImPlot.ImPlotAxisFlags_AutoFit
-            if buffer_changed
-                axis_cond = ImGuiCond_Always
-            else
-                axis_cond = ImGuiCond_Once
-            end
-            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "")
-            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "")
-            ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(buffer,1)), axis_cond)
-            ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(buffer,2)), axis_cond)
-            # ImPlot.PlotHeatmap(vec(actuator_nm),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; label_fmt=C_NULL)
-            ImPlot.SetupFinish()
-
 
             ImPlot.PushColormap(cmap)
             ImPlot.PlotHeatmap("img", vec(buffer),reverse(size(buffer))...,cmin[],cmax[]; label_fmt=C_NULL, bounds_min=bounds_min, bounds_max=bounds_max)
