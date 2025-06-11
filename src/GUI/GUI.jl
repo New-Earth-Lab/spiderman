@@ -3,17 +3,16 @@ Package of various graphical user interface tools.
 """
 
 # Import the new CImGui API
+import CImGui
 import CImGui as ig
 import ModernGL
 import GLFW
-using CImGui
 using CImGui.lib  # For ImGui types
-using CImGui: CSyntax
+using CSyntax
 using Printf
 using Base.Threads
 using Revise
 
-using CSyntax
 # Note: ImPlot integration would need to be updated separately
 # For now, we'll comment out ImPlot-specific functionality
 
@@ -108,6 +107,8 @@ GuiState() = GuiState(
 )
 
 const gui_state = GuiState()
+const launch_waiter_event = Ref{Union{Event,Nothing}}(nothing)
+const is_precompilemode = Ref(false)
 
 export spiderman
 """
@@ -142,6 +143,10 @@ function spiderman(; bg=true, _launch_waiter_event=Event(), precompilemode=false
         return guitask
     end
 
+    # Store the launch waiter event globally so handle_frame can access it
+    launch_waiter_event[] = _launch_waiter_event
+    is_precompilemode[] = precompilemode
+
     global data_path
     if isnothing(data_path)
         data_path = config("general", "data_path")
@@ -156,12 +161,12 @@ function spiderman(; bg=true, _launch_waiter_event=Event(), precompilemode=false
     
     # Create context
     ctx = ig.CreateContext()
-    p_ctx =ImPlot.CreateContext() 
+    p_ctx =ImPlot.CreateContext()
     
     # Configure ImGui
     io = ig.GetIO()
     io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_DockingEnable
-    io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_ViewportsEnable
+    # io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_ViewportsEnable
     io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.ImGuiConfigFlags_NavEnableKeyboard
     unsafe_store!(io.ConfigWindowsMoveFromTitleBarOnly, true)
     unsafe_store!(io.ConfigDragClickToInputText, true)
@@ -177,10 +182,12 @@ function spiderman(; bg=true, _launch_waiter_event=Event(), precompilemode=false
     
     gui_active[] = true
     
-    # Reset frame counter
+    # Reset GUI state for fresh start
     gui_state.frame_i = 0
     gui_state.trigger_revision = false
     gui_state.world = Base.get_world_counter()
+    gui_state.time_start = 0.0
+    gui_state.frame_draw_time = 0.0
     
     try
         # Use the new render function with a callback
@@ -193,21 +200,12 @@ function spiderman(; bg=true, _launch_waiter_event=Event(), precompilemode=false
         ) do
             # This callback is called for each frame
             handle_frame()
-            
-            # Return true to continue, false to exit
-            return !gui_state.trigger_revision || gui_state.frame_i < 7
-        end
-        
-        # Handle revision if needed
-        if gui_state.trigger_revision && gui_state.frame_i >= 7
-            # Close and restart for revision
-            gui_active[] = false
-            @info "Restarting GUI after revision..."
-            spiderman(; bg=bg, _launch_waiter_event, precompilemode)
         end
         
     finally
         gui_active[] = false
+        launch_waiter_event[] = nothing
+        is_precompilemode[] = false
         # Note: ImPlot context cleanup would go here if using ImPlot
     end
 end
@@ -216,21 +214,20 @@ function handle_frame()
     gui_state.frame_i += 1
     gui_state.time_start = time_ns()
     
-    # Notify launch waiter after GUI is visible
-    if gui_state.frame_i == 5 && isdefined(Main, :_launch_waiter_event)
-        notify(Main._launch_waiter_event)
-    end
+    # During the first sequence of frames, we set things in motion one frame at a time
+    # First few frames: show loading screen
+    # Frame 2: Handle revision if triggered
+    # Frame 4: Fill component panel map
+    # Frame 5: Notify launch waiter
+    # Frame 6+: Normal operation
     
-    # Exit early if precompiling
-    if gui_state.frame_i == 6 && isdefined(Main, :precompilemode) && Main.precompilemode
-        return false
-    end
-    
-    # Handle revision
+    # Handle revision at frame 2
+    # This happens after trigger_revision is set and frame_i was reset to 1
     if gui_state.trigger_revision && gui_state.frame_i == 2
         @info "Revising code..."
         Revise.revise(throw=true)
         @info "Revision complete"
+        # Update world age and clear the trigger
         gui_state.world = Base.get_world_counter()
         gui_state.trigger_revision = false
     end
@@ -240,92 +237,120 @@ function handle_frame()
         Base.invoke_in_world(gui_state.world, fill_component_panel_map!, component_panel_map)
     end
     
-    # Main drawing
+    # Notify launch waiter after GUI is visible
+    if gui_state.frame_i == 5 && !isnothing(launch_waiter_event[])
+        notify(launch_waiter_event[])
+        launch_waiter_event[] = nothing  # Clear it after use
+    end
+    
+    # Exit early if precompiling
+    if gui_state.frame_i == 6 && is_precompilemode[]
+        return false
+    end
+    
+    # Main drawing - invoke in the correct world age
+    # This ensures that all GUI drawing code sees a consistent version of the code,
+    # even if the user modifies code on the REPL while the GUI is running
     gui_state.time_info = @timed begin
-        # Create docking space
-        ig.DockSpaceOverViewport()
+        trigger_revision_this_frame = Base.invoke_in_world(gui_state.world, draw_gui_content, gui_state.frame_i)
         
-        # Note: ImPlot style pushing would go here
-        
-        # Draw main menu bar
-        if ig.BeginMainMenuBar()
-            if ig.BeginMenu("Application")
-                if ig.MenuItem("Reload config file")
-                    config("general", refresh=true)
-                    availcomponents(refresh=true)
-                    fill_component_panel_map!(component_panel_map)
-                end
-                if ig.MenuItem("Export config file")
-                    writeconfig()
-                end
-                if ig.MenuItem("Revise")
-                    gui_state.trigger_revision = true
-                end
-                if ig.MenuItem("Close windows (leave Julia running)")
-                    ig.EndMenu()
-                    ig.EndMainMenuBar()
-                    return false  # Signal to close
-                end
-                if ig.MenuItem("Quit")
-                    exit()
-                end
-                ig.EndMenu()
-            end
-            
-            if ig.BeginMenu("Tools")
-                for k in sort(collect(keys(component_panel_map)), by=k->k[2])
-                    v = component_panel_map[k]
-                    (type, name) = k
-                    (func, visible) = v
-                    if ig.MenuItem(name, C_NULL, visible[])
-                        component_panel_map[k] = [func, Ref(!visible[]), Ref(false)]
-                    end
-                end
-                ig.EndMenu()
-            end
-            
-            ig.SameLine(ig.GetWindowWidth() - 100)
-            fps = unsafe_load(ig.GetIO().Framerate)
-            ig.Text(@sprintf("GUI FPS: %3.0f", fps))
-            ig.EndMainMenuBar()
+        # Handle trigger revision from menu
+        if trigger_revision_this_frame
+            gui_state.trigger_revision = true
         end
-        
-        # Show loading screen for first few frames
-        if gui_state.frame_i < 5
-            ig.SetNextWindowFocus()
-            ig.Begin("##loading")
-            ig.TextWrapped("Loading...")
-            ig.End()
-        else
-            # Show components
-            show_components()
-            
-            # Draw main panel
-            info = (
-                gui_state.time_info,
-                gui_state.alloc_hist,
-                gui_state.time_start,
-                gui_state.time_hist,
-                gui_state.frame_draw_time,
-                gui_state.frame_i,
-                component_panel_map
-            )
-            Base.invoke_in_world(gui_state.world, main_panel_draw, info)
-        end
-        
-        # Note: ImPlot style popping would go here
     end
     
     curr_time = time_ns()
     gui_state.frame_draw_time = curr_time - gui_state.time_start
     
-    # Reset frame counter if revising
+    # Reset frame counter if revision was requested
+    # Set to 1 so that after increment at the start of next frame, it will be 2
     if gui_state.trigger_revision
-        gui_state.frame_i = 2
-        @info "Triggering revision"
+        gui_state.frame_i = 1
     end
     
     return true  # Continue rendering
+end
+
+# Separate function for drawing GUI content that can be invoked in a specific world
+function draw_gui_content(frame_i)
+    trigger_revision = false
+    
+    # Create docking space
+    ig.DockSpaceOverViewport()
+    
+    # Note: ImPlot style pushing would go here
+    
+    # Draw main menu bar
+    if ig.BeginMainMenuBar()
+        if ig.BeginMenu("Application")
+            if ig.MenuItem("Reload config file")
+                config("general", refresh=true)
+                availcomponents(refresh=true)
+                fill_component_panel_map!(component_panel_map)
+            end
+            if ig.MenuItem("Export config file")
+                writeconfig()
+            end
+            if ig.MenuItem("Revise")
+                trigger_revision = true
+            end
+            if ig.MenuItem("Close windows (leave Julia running)")
+                ig.EndMenu()
+                ig.EndMainMenuBar()
+                # Need to handle this differently since we can't return from here
+                throw(InterruptException())
+            end
+            if ig.MenuItem("Quit")
+                exit()
+            end
+            ig.EndMenu()
+        end
+        
+        if ig.BeginMenu("Tools")
+            for k in sort(collect(keys(component_panel_map)), by=k->k[2])
+                v = component_panel_map[k]
+                (type, name) = k
+                (func, visible) = v
+                if ig.MenuItem(name, C_NULL, visible[])
+                    component_panel_map[k] = [func, Ref(!visible[]), Ref(false)]
+                end
+            end
+            ig.EndMenu()
+        end
+        
+        ig.SameLine(ig.GetWindowWidth() - 100)
+        fps = unsafe_load(ig.GetIO().Framerate)
+        ig.Text(@sprintf("GUI FPS: %3.0f", fps))
+        ig.EndMainMenuBar()
+    end
+    
+    # Show loading screen for first few frames
+    if frame_i < 5
+        ig.SetNextWindowFocus()
+        ig.Begin("##loading")
+        ig.TextWrapped("Loading...")
+        ig.End()
+    else
+        # Show components
+        show_components()
+        
+        # Draw main panel
+        info = (
+            gui_state.time_info,
+            gui_state.alloc_hist,
+            gui_state.time_start,
+            gui_state.time_hist,
+            gui_state.frame_draw_time,
+            frame_i,
+            component_panel_map
+        )
+        Base.invoke_in_world(gui_state.world, main_panel_draw, info)
+    end
+    
+    # Note: ImPlot style popping would go here
+    
+    return trigger_revision
 end
 
 function show_components()
