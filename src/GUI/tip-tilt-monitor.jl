@@ -1,6 +1,7 @@
 using Aeron
 using LinearAlgebra
 using AstroImages
+using FFTW
 mutable struct TTMonitor
     const name::String
     const aeron_config::AeronConfig
@@ -11,7 +12,7 @@ mutable struct TTMonitor
 end
 function TTMonitor(conf)
     aeron_config = AeronConfig(conf["input-channel"], conf["input-stream"])
-    mode2actus = load(conf["modes-to-actus"])
+    mode2actus = collect(load(conf["modes-to-actus"]))
     actus2modes = pinv(mode2actus)'
     history_length = conf["history-length"]
 
@@ -91,9 +92,23 @@ function gui_panel(::Type{TTMonitor}, component_config)
             end
         end
 
+        if ttmon.counter[] == 0
+            CImGui.Spacing()
+            CImGui.PushFont(font_large)
+            CImGui.Text("Status: ")
+            CImGui.SameLine()
+            CImGui.PushStyleColor(ImGuiCol_Text, CImGui.IM_COL32(0xFF, 0xCC, 0x00, 0xff));
+            CImGui.Text(string("Waiting for data"))
+            CImGui.PopStyleColor()
+            CImGui.PopFont()
+
+            CImGui.End() # End of this panel
+            return CImGui.End()
+        end
+
 
         w = CImGui.GetWindowWidth() - 10
-        h = (CImGui.GetWindowHeight() - 40)/2
+        h = (CImGui.GetWindowHeight() - 40)/3
         plotsize = ImVec2(w,h)
         
         if ImPlot.BeginPlot(
@@ -121,18 +136,41 @@ function gui_panel(::Type{TTMonitor}, component_config)
             ImPlot.EndPlot()
         end
 
+        t_series_tip = [ttmon.mode_history[ttmon.counter[]:end,1]; ttmon.mode_history[begin:ttmon.counter[]-1,1];]
+        t_series_tilt = [ttmon.mode_history[ttmon.counter[]:end,2]; ttmon.mode_history[begin:ttmon.counter[]-1,2];]
         if ImPlot.BeginPlot(
             "##ttmon-timeseries",
             plotsize,
         )
-            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "time (iter)",ImPlot.ImPlotAxisFlags_AutoFit)
-            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "amplitude (arb.)",ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "time (iter)", ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "amplitude (arb.)", ImPlot.ImPlotAxisFlags_AutoFit)
             ImPlot.SetupFinish()
-            @views ImPlot.PlotLine("tip", ax, ttmon.mode_history[:,1], size(ttmon.mode_history,1));
-            @views ImPlot.PlotLine("tilt", ax, ttmon.mode_history[:,2], size(ttmon.mode_history,1))
+            @views ImPlot.PlotLine("tip", ax, t_series_tip, length(t_series_tip))#ttmon.mode_history[:,1], size(ttmon.mode_history,1));
+            @views ImPlot.PlotLine("tilt", ax, t_series_tilt, length(t_series_tilt))#ttmon.mode_history[:,2], size(ttmon.mode_history,1))
+            ImPlot.EndPlot()
+        end
+        t_series_tip .-= mean(t_series_tip)
+        t_series_tilt .-= mean(t_series_tilt)
+        t_series_tip .*= sin.(pi .* (1:length(t_series_tip))./length(t_series_tip))
+        t_series_tilt .*= sin.(pi .* (1:length(t_series_tilt))./length(t_series_tilt))
+        # TODO: using counter sample twice, fix this
+        if ImPlot.BeginPlot(
+            "##ttmon-powspec",
+            plotsize,
+            ImPlot.ImPlotFlags_NoLegend
+        ) && ttmon.counter[] > 0
+            # apply window to reduce leakage
+            powspec_tip = abs.(fftshift(fft(t_series_tip))[end÷2:end])
+            powspec_tilt = abs.(fftshift(fft(t_series_tilt))[end÷2:end])
+            ImPlot.SetupAxis(ImPlot.ImAxis_X1, "frequency (1/iter)",)#ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "|ft(amp.)| (arb.)",)#ImPlot.ImPlotAxisFlags_AutoFit)
+            ImPlot.SetupAxisScale(ImPlot.ImAxis_Y1, ImPlot.ImPlotScale_Log10)
+            ImPlot.SetupAxisScale(ImPlot.ImAxis_X1, ImPlot.ImPlotScale_Log10)
+            ImPlot.SetupFinish()
+            @views ImPlot.PlotLine("tip", ax, powspec_tip, length(powspec_tip));
+            @views ImPlot.PlotLine("tilt", ax, powspec_tilt, length(powspec_tilt))
             ImPlot.EndPlot()
 
-            CImGui.SameLine();
         end
 
 

@@ -5,7 +5,6 @@ using SpidersMessageEncoding
 
 struct DMOffsetTool
     name::String
-    aeron_config::AeronConfig
     pub::Aeron.AeronPublication
     pubhead::ArrayMessage{Float32,1,Vector{UInt8}}
     actuator_map::BitMatrix
@@ -16,6 +15,8 @@ struct DMOffsetTool
     cyc_xs
     cyc_ys
     phases
+    smodemat::Matrix{Float32}
+    cyc_rs
 end
 function DMOffsetTool(conf)
     aeron_config = AeronConfig(conf["output-channel"], conf["output-stream"])
@@ -24,6 +25,8 @@ function DMOffsetTool(conf)
     lmodemat = Float32.(load(conf["lowfs-modes"]))
     fmodemat, cyc_xs, cyc_ys, phases = load(conf["fourier-modes"],:)
     fmodemat = Float32.(fmodemat)
+    smodemat, cyc_rs = load(conf["spiders-modes"],:)
+    smodemat = Float32.(smodemat)
     actuator_map = BitMatrix(load(conf["actuator-map"]))
     valid_actuator_map = BitMatrix(load(conf["valid-actuator-map"]))
 
@@ -49,6 +52,14 @@ function DMOffsetTool(conf)
     end
     fmodemat ./= rmsnm
 
+
+    # Scale modes to be in units of 1nm RMS
+    rmsnm = mapslices(smodemat,dims=2) do actuator_volts
+        actuator_nm = actuator_volts .* 10 .* 1e3
+        sqrt(mean(px^2 for px in vec(actuator_nm)))
+    end
+    smodemat ./= rmsnm
+
     # This is a byte buffer where we store our messages we want to send over Aeron
     # We can view into it to see the last command we sent.
     buffer = zeros(UInt8, 468*8+60*4)
@@ -60,14 +71,14 @@ function DMOffsetTool(conf)
 
     feed = DMOffsetTool(
         conf["name"],
-        aeron_config,
         aeronpub,
         pubhead,
         actuator_map,
         valid_actuator_map,
         modemat,
         lmodemat,
-        fmodemat, cyc_xs, cyc_ys, phases
+        fmodemat, cyc_xs, cyc_ys, phases,
+        smodemat, cyc_rs
     )
 
     return feed
@@ -99,6 +110,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
     lmode_amplitudes_nm_rms = nothing
     cmd = nothing
     fmode_i = 1
+    smode_i = Ref(Int32(100))
 
     modenames = [
         "Tip",
@@ -109,7 +121,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
         "Coma 1",
         "Coma 2",
         "Sphere",
-        #TODO : Wyant numbering
+        #TODO : Want numbering
     ]
     modenames = [modenames; string.(10:30)]
 
@@ -119,6 +131,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
     cyc_y = Ref(Int32(6))
     phase_i = Ref(Int32(1))
     famp = Ref(0f0)
+    samp = Ref(0f0)
 
     function draw(dmoff, visible)
 
@@ -128,6 +141,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
             cmd = zeros(Float32, size(dmoff.modemat,2))
             manual_offset  = zeros(Float32, size(dmoff.modemat,2))
             famp[] = 0
+            samp[] = 0
             first_view=false
         end
 
@@ -151,6 +165,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
             lmode_amplitudes_nm_rms .= 0f0
             manual_offset .= 0
             famp[] = 0
+            samp[] = 0
         end
 
         tt_range = Float32( dm_tt_coarse ? 750 : 150)
@@ -170,7 +185,17 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
 
             for (modename, modenum) in zip(modenames, 1:size(dmoff.modemat,1))
                 CImGui.Text("$modename (nm RMS)")
+                CImGui.SameLine()
                 t = mode_amplitudes_nm_rms[modenum]
+                if CImGui.SmallButton("-##-$modename")
+                    changed = true
+                    t -= tt_range[end]/30
+                end
+                CImGui.SameLine()
+                if CImGui.SmallButton("+##+$modename")
+                    changed = true
+                    t += tt_range[end]/30
+                end
                 changed |= @c CImGui.SliderFloat("##$modename", &t, -tt_range, tt_range)
                 CImGui.SameLine()
                 changed |=  @c CImGui.InputFloat("##$modename-num", &t)
@@ -195,6 +220,24 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
                     dmoff.cyc_ys .== cyc_y
                 )[phase_i[]]
             end
+        end
+        if CImGui.CollapsingHeader("Spiders pseudo-Fourier")
+            CImGui.Text("Mode number")
+            changed |= CImGui.SliderInt("##spf-i", smode_i, 1, size(dmoff.smodemat,1))
+            CImGui.SameLine()
+            if CImGui.SmallButton("-")
+                smode_i[] = smode_i[] -1
+                changed = true
+            end
+            CImGui.SameLine()
+            if CImGui.SmallButton("+")
+                smode_i[] = smode_i[] +1
+                changed = true
+            end
+            CImGui.Text("Has radial order = $(dmoff.cyc_rs[smode_i[]])")
+            CImGui.Text("Amplitude (nm rms)")
+            changed |= CImGui.SliderFloat("##Amp-spf", samp, -200, 200)
+
         end
         if CImGui.CollapsingHeader("Manual Control")
             CImGui.PushFont(font_small)
@@ -236,6 +279,7 @@ function gui_panel(::Type{DMOffsetTool}, component_config)
             mul!(cmd, dmoff.modemat', mode_amplitudes_nm_rms)
             cmd .+= dmoff.lmodemat' * lmode_amplitudes_nm_rms
             @views cmd .+= famp[] .* dmoff.fmodemat[fmode_i,:]
+            @views cmd .+= samp[] .* dmoff.smodemat[smode_i[],:]
 
             cmd .+= manual_offset
             ok = true

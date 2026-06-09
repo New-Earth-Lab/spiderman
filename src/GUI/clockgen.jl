@@ -23,6 +23,28 @@ const DELAY_PRESETS = [
     ("1ms", 1e-3),
 ]
 
+# Channel modes - device may return abbreviated forms (NORM, SING, BURS, DCYC)
+const CHANNEL_MODES = ["NORMAL", "SINGLE", "BURST", "DCYCLE"]
+const CHANNEL_MODE_ABBREVS = ["NORM", "SING", "BURS", "DCYC"]
+
+# Helper to normalize mode string from device to full name
+function normalize_mode(mode::String)
+    m = uppercase(strip(mode))
+    # Check abbreviated forms
+    for (i, abbrev) in enumerate(CHANNEL_MODE_ABBREVS)
+        if startswith(m, abbrev)
+            return CHANNEL_MODES[i]
+        end
+    end
+    # Check full names
+    for full in CHANNEL_MODES
+        if m == full
+            return full
+        end
+    end
+    return "NORMAL"  # Default
+end
+
 mutable struct ClockGen
     const name::String
     const aeron_event_pub::Aeron.AeronPublication
@@ -32,6 +54,12 @@ mutable struct ClockGen
     last_heartbeat_time::Base.RefValue{Float64}
     # UI state for delay input fields (per channel, in microseconds for display)
     delay_input::Vector{Cfloat}
+    # UI state for width input fields (per channel, in microseconds for display)
+    width_input::Vector{Cfloat}
+    # UI state for pulse counter (ON cycle)
+    pcounter_input::Vector{Cfloat}
+    # UI state for off counter (OFF cycle)
+    ocounter_input::Vector{Cfloat}
     # Track which channels are expanded
     channel_expanded::Vector{Bool}
     # Configurable channel names
@@ -64,8 +92,11 @@ function ClockGen(conf)
     # Request initial status
     sendevents(aeron_event_pub; StatusRequest=nothing)
 
-    # Initialize delay inputs (6 channels A-F, default 0)
+    # Initialize inputs (6 channels A-F)
     delay_input = Cfloat[0.0f0 for _ in 1:6]
+    width_input = Cfloat[0.0f0 for _ in 1:6]
+    pcounter_input = Cfloat[1.0f0 for _ in 1:6]
+    ocounter_input = Cfloat[1.0f0 for _ in 1:6]
     channel_expanded = Bool[true, false, false, false, false, false]
 
     # Channel names from config, or defaults (A-F)
@@ -84,6 +115,9 @@ function ClockGen(conf)
         status,
         heartbeat,
         delay_input,
+        width_input,
+        pcounter_input,
+        ocounter_input,
         channel_expanded,
         channel_names
     )
@@ -97,7 +131,7 @@ function gui_panel(::Type{ClockGen}, component_config)
     err_timeout = Ref(0.0)
 
     function draw(cg::ClockGen, visible)
-        CImGui.SetNextWindowSize((320, 380), CImGui.ImGuiCond_FirstUseEver)
+        CImGui.SetNextWindowSize((480, 450), CImGui.ImGuiCond_FirstUseEver)
 
         if !CImGui.Begin(component_config["name"], visible)
             CImGui.End()
@@ -226,21 +260,41 @@ function draw_channel_row(cg::ClockGen, ch::Int)
     # Service uses numeric keys internally
     enabled_key = Symbol("ch$(ch)_enabled")
     delay_key = Symbol("ch$(ch)_delay")
+    mode_key = Symbol("ch$(ch)_mode")
+    pcounter_key = Symbol("ch$(ch)_pcounter")
+    ocounter_key = Symbol("ch$(ch)_ocounter")
+    width_key = Symbol("ch$(ch)_width")
 
     ch_enabled = get(cg.status, enabled_key, nothing)
     ch_delay = get(cg.status, delay_key, nothing)
+    ch_mode_raw = get(cg.status, mode_key, "NORMAL")
+    ch_pcounter = get(cg.status, pcounter_key, nothing)
+    ch_ocounter = get(cg.status, ocounter_key, nothing)
+    ch_width = get(cg.status, width_key, nothing)
 
-    # Update local delay input from status (convert to microseconds)
+    # Normalize mode from device (handles abbreviated forms like DCYC -> DCYCLE)
+    ch_mode = ch_mode_raw isa AbstractString ? normalize_mode(String(ch_mode_raw)) : "NORMAL"
+
+    # Update local inputs from status
     if !isnothing(ch_delay) && ch_delay isa Number
         cg.delay_input[ch] = Cfloat(ch_delay * 1e6)  # Convert to us
+    end
+    if !isnothing(ch_width) && ch_width isa Number
+        cg.width_input[ch] = Cfloat(ch_width * 1e6)  # Convert to us
+    end
+    if !isnothing(ch_pcounter) && ch_pcounter isa Number
+        cg.pcounter_input[ch] = Cfloat(ch_pcounter)
+    end
+    if !isnothing(ch_ocounter) && ch_ocounter isa Number
+        cg.ocounter_input[ch] = Cfloat(ch_ocounter)
     end
 
     # Channel label with enable/disable toggle
     is_enabled = ch_enabled === true || ch_enabled == 1
 
-    # Compact row: [Ch#] [On/Off] [Delay input] [Presets]
     CImGui.PushID("ch$ch")
 
+    # === ROW 1: Channel name, On/Off, Mode, Delay ===
     # Channel name with color indicator
     ch_name = cg.channel_names[ch]
     if is_enabled
@@ -266,73 +320,107 @@ function draw_channel_row(cg::ClockGen, ch::Int)
     end
     CImGui.SameLine()
 
-    # Delay input (in microseconds)
-    CImGui.SetNextItemWidth(50)
-    delay_ref = Ref(cg.delay_input[ch])
-    changed = false
-    if CImGui.DragFloat("##$ch-delay", delay_ref, 100.0, 0, 10000, "%.3f")
-        cg.delay_input[ch] = delay_ref[]
-        changed = true
+    # Mode selector (combo box)
+    CImGui.SetNextItemWidth(80)
+    current_idx = findfirst(==(ch_mode), CHANNEL_MODES)
+    if isnothing(current_idx)
+        current_idx = 1
+    end
+    if CImGui.BeginCombo("##mode$ch", ch_mode)
+        for (i, mode) in enumerate(CHANNEL_MODES)
+            is_selected = (i == current_idx)
+            if CImGui.Selectable(mode, is_selected)
+                sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch)Mode") => mode,)...)
+            end
+            if is_selected
+                CImGui.SetItemDefaultFocus()
+            end
+        end
+        CImGui.EndCombo()
     end
     CImGui.SameLine()
-    if CImGui.SmallButton("-##$ch")
-        cg.delay_input[ch] -= 100 # us
-        changed = true
-    end
-    CImGui.SameLine()
-    if CImGui.SmallButton("+##$ch")
-        cg.delay_input[ch] += 100 # us
-        changed = true
-    end
-    CImGui.SameLine()
-    CImGui.Text("   us")
 
-    # Set button - sends the delay value
-    # if CImGui.SmallButton("Set")
-    if changed 
-        delay_seconds = Float64(cg.delay_input[ch]) * 1e-6  # Convert us to seconds
+    # Delay input (in microseconds)
+    CImGui.Text("Dly:")
+    CImGui.SameLine()
+    CImGui.SetNextItemWidth(60)
+    delay_ref = Ref(cg.delay_input[ch])
+    delay_changed = false
+    if CImGui.DragFloat("##delay$ch", delay_ref, 10.0f0, 0.0f0, 100000.0f0, "%.1f")
+        cg.delay_input[ch] = delay_ref[]
+        delay_changed = true
+    end
+    CImGui.SameLine()
+    CImGui.Text("us")
+
+    if delay_changed
+        delay_seconds = Float64(cg.delay_input[ch]) * 1e-6
         sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch)Delay") => delay_seconds,)...)
     end
 
-    # Preset buttons on second line if channel is expanded
-    if cg.channel_expanded[ch]
-        # CImGui.Indent(40)
-        # if CImGui.SmallButton("0##ch$(ch)")
-        #         sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch)Delay") => 0,)...)
-        #         cg.delay_input[ch] = 0
-        #     end
-        # for (i, (preset_name, preset_val)) in enumerate(DELAY_PRESETS)
-        #     if i > 1
-        #         CImGui.SameLine()
-        #     end
-        #     # Highlight if current delay matches preset (within 1%)
-        #     is_selected = false
-        #     if !isnothing(ch_delay) && ch_delay isa Number && preset_val > 0
-        #         is_selected = abs(ch_delay - preset_val) / preset_val < 0.01
-        #     elseif !isnothing(ch_delay) && preset_val == 0.0
-        #         is_selected = ch_delay == 0.0
-        #     end
+    # === ROW 2: Width and Duty Cycle counters (shown when expanded or in DCYCLE mode) ===
+    is_dcycle = ch_mode == "DCYCLE"
+    if cg.channel_expanded[ch] || is_dcycle
+        CImGui.Indent(70)
 
-        #     if is_selected
-        #         CImGui.PushStyleColor(ImGuiCol_Button, cg_enabled_color)
-        #     end
-        #     if CImGui.SmallButton("$(preset_name)##ch$(ch_letter)")
-        #         sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch_letter)Delay") => preset_val,)...)
-        #         cg.delay_input[ch] = Cfloat(preset_val * 1e6)
-        #     end
-        #     if is_selected
-        #         CImGui.PopStyleColor()
-        #     end
-        # end
-        # CImGui.Unindent(40)
+        # Width input
+        CImGui.Text("Width:")
+        CImGui.SameLine()
+        CImGui.SetNextItemWidth(60)
+        width_ref = Ref(cg.width_input[ch])
+        width_changed = false
+        if CImGui.DragFloat("##width$ch", width_ref, 1.0f0, 0.0f0, 10000.0f0, "%.1f")
+            cg.width_input[ch] = width_ref[]
+            width_changed = true
+        end
+        CImGui.SameLine()
+        CImGui.Text("us")
+
+        if width_changed
+            width_seconds = Float64(cg.width_input[ch]) * 1e-6
+            sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch)Width") => width_seconds,)...)
+        end
+
+        # Duty cycle counters (only show in DCYCLE mode)
+        if is_dcycle
+            CImGui.SameLine()
+            CImGui.Text(" ON:")
+            CImGui.SameLine()
+            CImGui.SetNextItemWidth(50)
+            pcounter_ref = Ref(cg.pcounter_input[ch])
+            pcounter_changed = false
+            if CImGui.DragFloat("##pcount$ch", pcounter_ref, 1.0f0, 1.0f0, 9999999.0f0, "%.0f")
+                cg.pcounter_input[ch] = pcounter_ref[]
+                pcounter_changed = true
+            end
+            if pcounter_changed
+                sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch)PCOunter") => Float64(cg.pcounter_input[ch]),)...)
+            end
+
+            CImGui.SameLine()
+            CImGui.Text("OFF:")
+            CImGui.SameLine()
+            CImGui.SetNextItemWidth(50)
+            ocounter_ref = Ref(cg.ocounter_input[ch])
+            ocounter_changed = false
+            if CImGui.DragFloat("##ocount$ch", ocounter_ref, 1.0f0, 1.0f0, 9999999.0f0, "%.0f")
+                cg.ocounter_input[ch] = ocounter_ref[]
+                ocounter_changed = true
+            end
+            if ocounter_changed
+                sendevents(cg.aeron_event_pub; (Symbol("Ch$(ch)OCOunter") => Float64(cg.ocounter_input[ch]),)...)
+            end
+        end
+
+        CImGui.Unindent(70)
     end
 
-    # Toggle expand/collapse for presets
-    # CImGui.SameLine(290)
-    # expand_label = cg.channel_expanded[ch] ? "-" : "+"
-    # if CImGui.SmallButton("$(expand_label)##exp$ch")
-    #     cg.channel_expanded[ch] = !cg.channel_expanded[ch]
-    # end
+    # Toggle expand/collapse
+    CImGui.SameLine(CImGui.GetWindowWidth() - 30)
+    expand_label = cg.channel_expanded[ch] ? "-" : "+"
+    if CImGui.SmallButton("$(expand_label)##exp$ch")
+        cg.channel_expanded[ch] = !cg.channel_expanded[ch]
+    end
 
     CImGui.PopID()
 end

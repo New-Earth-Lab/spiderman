@@ -5,7 +5,7 @@ function plot_dm_commands(dm::DMFeed)
     scale_amount=Ref(Cfloat(100))
 
     # sub_bestflat = Ref(true)
-    # sub_tt = Ref(true)
+    sub_tt = Ref(false)
 
     auto_scale = true
     scale_min = 0.01f0
@@ -15,33 +15,41 @@ function plot_dm_commands(dm::DMFeed)
     # tip_2  = dm.tiptilt(1.0, 0.0)
     # tilt_2 = dm.tiptilt(0.0, 1.0)
 
+    xs = axes(dm.actuator_map,1)
+    ys = axes(dm.actuator_map,2)
+    xs = xs .- mean(xs)
+    ys = ys .- mean(ys)
+    tip_1 = dm.actuator_map .* xs .+ 0 .* ys
+    tilt_1 = dm.actuator_map .* ys' .+ 0 .* xs
+
+
     function (commands)
         actuator_nm .= commands .* 10 .* 1e3
-        rmsnm = sqrt(mean(px^2 for px in vec(actuator_nm)))
-        actuator_nm_extrema = Float32(max(
-            abs(minimum(actuator_nm)),
-            maximum(actuator_nm),
-        ))
+        
 
-        # Set the scale a bit beyond the extrema of the current
-        # command, this gives room to see transients before
-        # the auto-scale adjusts
-        actuator_nm_extrema *= 1.5
 
         actuator_nm[.! dm.valid_actuator_map] .= Inf
         # Remove any user-requested modes
         # if sub_bestflat[]
         #     commands_local .-= dot(commands_local,dm.bestflat)/dot(dm.bestflat,dm.bestflat).*dm.bestflat
         # end
-        # if sub_tt[]
-        #     commands_local .-= dot(commands_local,tip_1)/dot(tip_1,tip_1).*tip_1
-        #     commands_local .-= dot(commands_local,tip_2)/dot(tip_2,tip_2).*tip_2
-        #     commands_local .-= dot(commands_local,tilt_1)/dot(tilt_1,tilt_1).*tilt_1
-        #     commands_local .-= dot(commands_local,tilt_2)/dot(tilt_2,tilt_2).*tilt_2
-        # end 
+        if sub_tt[]
+            actuator_nm[dm.valid_actuator_map] .-= @views dot(actuator_nm[dm.valid_actuator_map],tip_1[dm.valid_actuator_map])/dot(tip_1[dm.valid_actuator_map],tip_1[dm.valid_actuator_map]).*tip_1[dm.valid_actuator_map]
+            actuator_nm[dm.valid_actuator_map] .-= @views dot(actuator_nm[dm.valid_actuator_map],tilt_1[dm.valid_actuator_map])/dot(tilt_1[dm.valid_actuator_map],tilt_1[dm.valid_actuator_map]).*tilt_1[dm.valid_actuator_map]
+        end 
 
-        w = CImGui.GetWindowWidth() -80
-        h = CImGui.GetWindowHeight() - 110
+        rmsnm = sqrt(mean(px^2 for px in view(actuator_nm, dm.valid_actuator_map)))
+        actuator_nm_extrema = Float32(max(
+            abs(minimum(view(actuator_nm, dm.valid_actuator_map))),
+            maximum(view(actuator_nm, dm.valid_actuator_map)),
+        ))
+
+        # Set the scale a bit beyond the extrema of the current
+        # command, this gives room to see transients before
+        # the auto-scale adjusts
+        actuator_nm_extrema *= 1.5
+        w = CImGui.GetWindowWidth() -60
+        h = CImGui.GetWindowHeight() - 90
         d = min(w,h)
         plotsize = ImVec2(d,d)
 
@@ -66,10 +74,9 @@ function plot_dm_commands(dm::DMFeed)
             ImPlot.PopColormap()
 
             CImGui.SameLine();
-            ImPlot.ColormapScale("nm##cmap", -scale_amount[], scale_amount[], ImVec2(80,d), "%g", ImPlot.ImPlotColormapScaleFlags_None, cmap);
+            ImPlot.ColormapScale("nm##cmap", -scale_amount[], scale_amount[], ImVec2(20,d), "%g", ImPlot.ImPlotColormapScaleFlags_None, cmap);
         end
 
-        CImGui.Text(@sprintf("RMS: %.1f nm", rmsnm))
 
 
         # DM commands auto-scale
@@ -81,39 +88,40 @@ function plot_dm_commands(dm::DMFeed)
                 scale_amount[] = scale_amount[] + 0.01(actuator_nm_extrema - scale_amount[])
             end
         end
-        if CImGui.Button("auto")
+        if CImGui.SmallButton("auto")
             auto_scale = true
         end
         CImGui.SameLine()
-        if CImGui.Button("1 nm")
+        if CImGui.SmallButton("1 nm")
             auto_scale = false
             scale_amount[] = 1
         end
         CImGui.SameLine()
-        if CImGui.Button("10 nm")
+        if CImGui.SmallButton("10 nm")
             auto_scale = false
             scale_amount[] = 10
         end
-        CImGui.SameLine()
-        if CImGui.Button("100 nm")
+        #CImGui.SameLine()
+        if CImGui.SmallButton("100 nm")
             auto_scale = false
             scale_amount[] = 100
         end
         CImGui.SameLine()
-        if CImGui.Button("1 um")
+        if CImGui.SmallButton("1 um")
             auto_scale = false
             scale_amount[] = 1000
         end
         CImGui.SameLine()
-        if CImGui.Button("10 um")
+        if CImGui.SmallButton("10 um")
             auto_scale = false
             scale_amount[] = 10000
         end
 
         # CImGui.Checkbox("best flat##checkbox", sub_bestflat)
-        # CImGui.SameLine()
-        # CImGui.Checkbox("tip/tilt##checkbox", sub_tt)
+        CImGui.Checkbox("sub. tip/tilt##checkbox", sub_tt)
+        CImGui.SameLine()
 
+        CImGui.Text(@sprintf("RMS (nm): %04.2f ", rmsnm))
 
 
     end

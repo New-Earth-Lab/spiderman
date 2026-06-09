@@ -128,6 +128,9 @@ function gui_panel(::Type{PerfMon}, component_config)
         )
             ImPlot.SetupAxis(ImPlot.ImAxis_X1, "latency [ms]")
             ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "counts")
+            ImPlot.SetupAxisScale(ImPlot.ImAxis_Y1, ImPlot.ImPlotScale_Log10)
+            ImPlot.SetupAxisScale(ImPlot.ImAxis_X1, ImPlot.ImPlotScale_Log10)
+
             ImPlot.SetupFinish()
             ImPlot.PlotLine("#hist", bins_x_ms, perfmon.last_histogram, size(perfmon.last_histogram,1));
             ImPlot.EndPlot()

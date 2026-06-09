@@ -2,6 +2,46 @@ using AstroImages
 using Statistics
 using FFTW
 
+# Transform registry: Vector of (name, function) tuples
+# Each function takes an array and returns a transformed array
+# Easy to extend: just add new (name, function) tuples
+const AVAILABLE_TRANSFORMS = [
+    ("FFT (spatial)",  img -> abs.(fftshift(fft(img, (1,2)), (1,2)))),
+    ("FFT (temporal)", img -> abs.(fftshift(fft(img, (3,)), (3,)))),
+    ("log10",          img -> log10.(max.(img .- minimum(img), 1e-10))),
+    ("asinh",          img -> asinh.(img .- minimum(img))),
+    ("sqrt",           img -> sqrt.(max.(img .- minimum(img), 0))),
+    # ("normalize",      img -> (img .- mean(img)) ./ max(std(img), 1e-10)),
+]
+
+# Helper to look up transform by name
+function get_transform(name::String)
+    for (n, f) in AVAILABLE_TRANSFORMS
+        n == name && return f
+    end
+    return nothing
+end
+
+# Apply a pipeline of transforms in order
+function apply_transform_pipeline(img, transform_names::Vector{String})
+    if isempty(transform_names)
+        return img
+    end
+    result = copy(img)
+    for name in transform_names
+        f = get_transform(name)
+        if !isnothing(f)
+            try
+                result = f(result)
+            catch e
+                @warn "Transform $name failed" exception=e
+            end
+        end
+    end
+    result[.!isfinite.(result)] .= 0
+    return result
+end
+
 mutable struct ImageViewer
     # Set these to load data on next render
     new_contents
@@ -15,6 +55,59 @@ name(iv::ImageViewer) = iv.name
 
 
 _viewer_lock = ReentrantLock()
+
+# Shared state for synced viewer groups (colorscale, zoom/pan, mask, transforms, averaging)
+mutable struct SyncGroupState
+    # Colorscale
+    cmin::Ref{Cfloat}
+    cmax::Ref{Cfloat}
+    cmap::Ref{Int32}
+    # Plot limits (zoom/pan)
+    xlim_min::Ref{Cdouble}
+    xlim_max::Ref{Cdouble}
+    ylim_min::Ref{Cdouble}
+    ylim_max::Ref{Cdouble}
+    limits_initialized::Ref{Bool}
+    # Mask state
+    selected_mask_idx::Ref{Cint}
+    mask_alpha::Ref{Cfloat}
+    current_mask::Ref{Any}  # BitMatrix or nothing
+    # Transform pipeline (ordered list of transform names)
+    active_transforms::Ref{Vector{String}}
+    # Averaging settings
+    averaging_enabled::Ref{Bool}
+    averaging_count::Ref{Cint}      # target frames (e.g., 100)
+    averaging_progress::Ref{Cint}   # current accumulated frames (for display)
+end
+
+const _sync_groups = Dict{String, SyncGroupState}()
+const _sync_lock = ReentrantLock()
+
+function get_sync_group_state(group_name::String)
+    @lock _sync_lock begin
+        if !haskey(_sync_groups, group_name)
+            _sync_groups[group_name] = SyncGroupState(
+                Ref{Cfloat}(0),           # cmin
+                Ref{Cfloat}(1000),        # cmax
+                Ref{Int32}(ImPlot.ImPlotColormap_Plasma),  # cmap
+                Ref{Cdouble}(0.0),        # xlim_min
+                Ref{Cdouble}(1.0),        # xlim_max
+                Ref{Cdouble}(0.0),        # ylim_min
+                Ref{Cdouble}(1.0),        # ylim_max
+                Ref{Bool}(false),         # limits_initialized
+                Ref{Cint}(0),             # selected_mask_idx
+                Ref{Cfloat}(0.3),         # mask_alpha
+                Ref{Any}(nothing),        # current_mask
+                Ref{Vector{String}}(String[]),  # active_transforms (empty pipeline)
+                Ref{Bool}(false),         # averaging_enabled
+                Ref{Cint}(100),           # averaging_count (default 100 frames)
+                Ref{Cint}(0),             # averaging_progress
+            )
+        end
+        return _sync_groups[group_name]
+    end
+end
+
 # Function for sending images to the image viewer panel, if open.
 # Sends to the first image viewer if multiple are open.
 function imviewgui(path_or_arr; action="=", name="buffer")
@@ -44,6 +137,30 @@ function myhash(buffer)
     end
 end
 
+# Load a mask file from disk. Returns a BitMatrix or nothing on error.
+function load_mask_file(filepath::AbstractString)
+    try
+        @info "Loading mask file" filepath
+        di = load(filepath, :)
+        di = filter(i -> i isa AbstractArray, di)
+        if isempty(di)
+            @warn "No array data found in mask file" filepath
+            return nothing
+        end
+        mask_data = parent(first(di))
+        # Convert to BitMatrix if not already boolean
+        if eltype(mask_data) <: Bool
+            return BitMatrix(mask_data)
+        else
+            # Assume nonzero values are "masked" (true)
+            return BitMatrix(mask_data .!= 0)
+        end
+    catch err
+        @error "Failed to load mask file" filepath exception=(err, catch_backtrace())
+        return nothing
+    end
+end
+
 function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_size=(380,300))
 
     browser = nothing
@@ -55,14 +172,35 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
     image_headers = nothing
     err_msg = nothing
 
-    cmin = Ref{Cfloat}(0)
-    cmax = Ref{Cfloat}(1000)
+    # Sync group support - share colorscale, zoom/pan, and mask between viewers
+    sync_group_name = get(component_config, "colorscale-sync-group", nothing)
+    sync_state = !isnothing(sync_group_name) ? get_sync_group_state(sync_group_name) : nothing
+
+    if !isnothing(sync_state)
+        cmin = sync_state.cmin
+        cmax = sync_state.cmax
+        cmap_ref = sync_state.cmap
+        selected_mask_idx = sync_state.selected_mask_idx
+        mask_alpha = sync_state.mask_alpha
+        active_transforms = sync_state.active_transforms
+    else
+        cmin = Ref{Cfloat}(0)
+        cmax = Ref{Cfloat}(1000)
+        cmap_ref = Ref{Int32}(ImPlot.ImPlotColormap_Plasma)
+        selected_mask_idx = Ref{Cint}(0)  # 0 = None
+        mask_alpha = Ref{Cfloat}(0.3f0)
+        active_transforms = Ref{Vector{String}}(String[])
+    end
+
+    # Mask overlay state
+    mask_files = get(component_config, "mask-files", String[])
+    mask_file_labels = vcat(["None"], [basename(f) for f in mask_files])
+    # Local mask cache - synced viewers share via sync_state.current_mask
+    local_current_mask = nothing
 
     iscbdrag = false
     cbdrag_cmin = cmin[]
     cbdrag_cmax = cmax[]
-    # cmap = LibCImPlot.ImPlotColormap_Plasma
-    cmap = ImPlot.ImPlotColormap_Plasma
     # cbdrag_initial_limits = ImPlot.GetPlotLimits()
     wasmousedown = false
     cmaps = [
@@ -88,6 +226,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
     show_query_statistics = false
 
     hash_loaded = myhash(0)
+    prev_transforms = String[]  # Track previous transform pipeline for change detection
 
     function draw(component, visible)
         local send_input, send_action, send_name
@@ -132,6 +271,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             @info "Loading new file in image viewer" new_file
             image_path = new_file
             di = load(image_path,:)
+            di = filter(i->i isa AbstractArray, di)
             image_headers = header(first(di))
             images = parent.(di)
             if length(images) == 1
@@ -143,7 +283,6 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
         end
         if !isnothing(newimage)
             hash_loaded = myhash(image)
-            newimage = view(newimage, :, reverse(axes(newimage,2)), [(:) for _ in axes(newimage)[3:end]]...)
             if length(size(newimage)) > 6
                 @error "Cubes with more than 6 dimensions are not supported. (This is crazy!)"
                 newimage = nothing
@@ -170,67 +309,79 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                     image = newimage
                     try
                         image[:,:,slice_position...]
-                    catch 
+                    catch
                         slice_position = [1,1,1,1]
                     end
                     if typeof(image) <: AstroImage
-                        buffer = parent(image)[:,:,slice_position...]
+                        raw_slice = parent(image)[:,:,slice_position...]
                         image_headers = header(image)
                     else
-                        buffer = image[:,:,slice_position...]
+                        raw_slice = image[:,:,slice_position...]
                     end
-                    if eltype(buffer) ∉ (Cfloat, Cdouble)
-                        buffer = Cfloat.(buffer)
+                    if eltype(raw_slice) ∉ (Cfloat, Cdouble)
+                        raw_slice = Cfloat.(raw_slice)
                     end
+                    # Apply transform pipeline (live transforms)
+                    buffer = apply_transform_pipeline(raw_slice, active_transforms[])
                 elseif action == "-"
                     try
                         image .-= newimage
                     catch err
                         err_msg = string(err)
                     end
-                    buffer .= image[:,:,slice_position...]
+                    raw_slice = Float32.(image[:,:,slice_position...])
+                    buffer .= apply_transform_pipeline(raw_slice, active_transforms[])
                 elseif action == "+"
                     try
                         image .+= newimage
                     catch err
                         err_msg = string(err)
                     end
-                    buffer .= image[:,:,slice_position...]
+                    raw_slice = Float32.(image[:,:,slice_position...])
+                    buffer .= apply_transform_pipeline(raw_slice, active_transforms[])
                 elseif action == "*"
                     try
                         image .*= newimage
                     catch err
                         err_msg = string(err)
                     end
-                    buffer .= image[:,:,slice_position...]
+                    raw_slice = Float32.(image[:,:,slice_position...])
+                    buffer .= apply_transform_pipeline(raw_slice, active_transforms[])
                 elseif action == "/"
                     try
                         image ./= newimage
                     catch err
                         err_msg = string(err)
                     end
-                    buffer .= image[:,:,slice_position...]
+                    raw_slice = Float32.(image[:,:,slice_position...])
+                    buffer .= apply_transform_pipeline(raw_slice, active_transforms[])
                 else
                     error("Unsupported operation $action")
                 end
                 setconfig(component_config, "input", image)
-                buffer[.! isfinite.(buffer)] .= 0
-                if buffer_changed                
-                    # Default color limits. Try to take them from the full cube is it's reasonably sized, this is nicer.
+                # Note: apply_transform_pipeline already handles non-finite values
+                if buffer_changed
+                    # Default color limits.
+                    # Skip the first 4 (linear-indexed) pixels: some cameras encode the
+                    # frame number / camera status there, which otherwise skews the limits.
                     if length(image) == 0
                         cmin[]=cmax[]=0
+                    elseif !isempty(active_transforms[])
+                        # When transforms are active, use the transformed buffer for color limits
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.0001, 0.9999))
                     elseif length(image) < 256^3 && all(isfinite, image)
-                        cmin[], cmax[] = quantile(vec(image), (0.0001, 0.9999))
+                        # For small cubes without transforms, use full cube for nicer limits
+                        cmin[], cmax[] = quantile(@view(image[5:end]), (0.0001, 0.9999))
                     else
-                        cmin[], cmax[] = quantile(vec(buffer), (0.0001, 0.9999))
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.0001, 0.9999))
                     end
-                    if cmin[] == cmax[] 
+                    if cmin[] == cmax[]
                         cmin[]=0
                         cmax[]=1
                     end
                 end
             end
-            CImGui.SetNextWindowFocus()
+            # CImGui.SetNextWindowFocus()
         end
         
 
@@ -254,14 +405,15 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                     browser = filebrowse(r"\.fits|.fits.gz$",name=component_config["name"])
                 end
                 if CImGui.MenuItem("Send to DS9")
-                    ds9show(image)
+                    ds9show(buffer)
                 end
                 CImGui.EndMenu()
             end
             if CImGui.BeginMenu("Scale")
                 if !isnothing(buffer)
                     if CImGui.MenuItem("100%")
-                        cmin[], cmax[] = extrema(buffer)
+                        # Skip the first 4 pixels (frame counter / camera status on some cameras)
+                        cmin[], cmax[] = extrema(@view(buffer[5:end]))
                     end
                     if CImGui.MenuItem("99.99% (default)")
                         cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.0001, 0.9999))
@@ -296,36 +448,77 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             if CImGui.BeginMenu("Colour")
                 for (cmapkey, cmapname) in cmaps
                     if CImGui.MenuItem(cmapname)
-                        cmap = cmapkey
+                        cmap_ref[] = cmapkey
                     end
                 end
                 CImGui.EndMenu()
             end
-            if !ischild && CImGui.BeginMenu("Transform")
-                CImGui.Text("(disables live updates)")
-                if CImGui.MenuItem("FFT") && !isnothing(buffer)
-                    image = abs.(fftshift(fft(image,(1,2)),(1,2)))
-                    buffer .= image[:,:,slice_position...]
-                    buffer[.! isfinite.(buffer)] .= 0
-                    cmin[], cmax[] = quantile(vec(buffer), (0.0001, 0.9999))
-                end
-                if CImGui.MenuItem("asinh") && !isnothing(buffer)
-                    if minimum(image) <= 0
-                        image = image .- minimum(image)
+            if CImGui.BeginMenu("Transform")
+                # Show current pipeline
+                pipeline_str = isempty(active_transforms[]) ? "(none)" : join(active_transforms[], " -> ")
+                CImGui.Text("Pipeline: $pipeline_str")
+                CImGui.SameLine()
+                if CImGui.SmallButton("Clear") && !isempty(active_transforms[])
+                    active_transforms[] = String[]
+                    # Recalculate color limits after clearing (skip first 4 status pixels)
+                    if !isnothing(buffer) && length(buffer) > 0
+                        cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.0001, 0.9999))
                     end
-                    image = asinh.(image)
-                    buffer .= image[:,:,slice_position...]
-                    buffer[.! isfinite.(buffer)] .= 0
-                    cmin[], cmax[] = quantile(vec(buffer), (0.0001, 0.9999))
                 end
-                if CImGui.MenuItem("log10") && !isnothing(buffer)
-                    if minimum(image) <= 0
-                        image = image .- minimum(image)
+                CImGui.Separator()
+                CImGui.Text("Add transform:")
+                # Buttons to add each transform
+                for (tname, _) in AVAILABLE_TRANSFORMS
+                    if CImGui.MenuItem("+ $tname")
+                        active_transforms[] = vcat(active_transforms[], tname)
+                        # Recalculate color limits after adding transform
+                        if !isnothing(image)
+                            slice = image[:,:,slice_position...]
+                            transformed = apply_transform_pipeline(Float32.(slice), active_transforms[])
+                            # Skip first 4 status pixels when computing limits
+                            cmin[], cmax[] = quantile(@view(transformed[5:end]), (0.0001, 0.9999))
+                        end
                     end
-                    image = log10.(image)
-                    buffer .= image[:,:,slice_position...]
-                    buffer[.! isfinite.(buffer)] .= 0
-                    cmin[], cmax[] = quantile(vec(buffer), (0.0001, 0.9999))
+                end
+                CImGui.EndMenu()
+            end
+            if !isempty(mask_files) && CImGui.BeginMenu("Mask")
+                # Combo box for mask selection - reloads from disk each time
+                prev_idx = selected_mask_idx[]
+                if CImGui.BeginCombo("##mask_combo", mask_file_labels[selected_mask_idx[] + 1])
+                    for (i, label) in enumerate(mask_file_labels)
+                        is_selected = (i - 1) == selected_mask_idx[]
+                        if CImGui.Selectable(label, is_selected)
+                            selected_mask_idx[] = i - 1
+                        end
+                        if is_selected
+                            CImGui.SetItemDefaultFocus()
+                        end
+                    end
+                    CImGui.EndCombo()
+                end
+                # Reload mask if selection changed (or reload button pressed)
+                mask_changed = prev_idx != selected_mask_idx[]
+                CImGui.SameLine()
+                if CImGui.SmallButton("Reload") || mask_changed
+                    if selected_mask_idx[] == 0
+                        local_current_mask = nothing
+                    else
+                        local_current_mask = load_mask_file(mask_files[selected_mask_idx[]])
+                    end
+                    # Sync mask to group if synced
+                    if !isnothing(sync_state)
+                        sync_state.current_mask[] = local_current_mask
+                    end
+                end
+                CImGui.SliderFloat("Opacity", mask_alpha, 0.0f0, 1.0f0)
+                # Show mask dimensions if loaded
+                active_mask = !isnothing(sync_state) ? sync_state.current_mask[] : local_current_mask
+                if !isnothing(active_mask)
+                    CImGui.Text("Mask size: $(size(active_mask))")
+                    if !isnothing(buffer) && size(active_mask) != size(buffer)
+                        CImGui.TextColored(ImVec4(1,1,0,1), "Warning: size mismatch with image")
+                    end
                 end
                 CImGui.EndMenu()
             end
@@ -351,6 +544,9 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                     queryregion = queryview(image, plotquery, slice_position)
                     imviewgui(queryregion, name="cutout")
                 end
+                if CImGui.MenuItem("Send all to main viewer") && !isnothing(plotquery)
+                    imviewgui(image, name="cutout")
+                end
                 CImGui.EndMenu()
             end
             CImGui.EndMenuBar()
@@ -373,11 +569,11 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             end
         end
 
-        w = CImGui.GetWindowWidth()-100
-        h = CImGui.GetWindowHeight()-130 - 30*(length(axes(image))-2)
-        if ischild 
-            h += 50
-        end
+        w = CImGui.GetWindowWidth()-50
+        h = CImGui.GetWindowHeight()-30 - 30*(length(axes(image))-2)
+        # if ischild 
+        #     h += 50
+        # end
         # h = CImGui.GetWindowContentRegionWidth()/size(image,1)*size(image,2)
         plotsize = ImVec2(w,h)
 
@@ -390,9 +586,23 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
                 axis_changed |= CImGui.SliderInt("Axis $slicenum", pointer(slice_position, slicenum-2), 1, l)
             end
         end
-        if axis_changed || myhash(vec(image)) != hash_loaded
-            buffer .= image[:,:,slice_position...]
-            buffer[.! isfinite.(buffer)] .= 0
+        # Check if transforms changed
+        transforms_changed = active_transforms[] != prev_transforms
+        if transforms_changed
+            prev_transforms = copy(active_transforms[])
+        end
+        # Update buffer when image/axis/transforms change
+        if axis_changed || myhash(vec(image)) != hash_loaded || transforms_changed
+            raw_slice = Float32.(image[:,:,slice_position...])
+            buffer .= apply_transform_pipeline(raw_slice, active_transforms[])
+            # Recalculate color limits if transforms changed (skip first 4 status pixels)
+            if transforms_changed && length(buffer) > 0
+                cmin[], cmax[] = quantile(@view(buffer[5:end]), (0.0001, 0.9999))
+                if cmin[] == cmax[]
+                    cmin[] = 0
+                    cmax[] = 1
+                end
+            end
         end
         CImGui.PopItemWidth()
 
@@ -447,20 +657,47 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             end
 
             axis_flags = ImPlot.ImPlotAxisFlags_NoLabel | ImPlot.ImPlotAxisFlags_AutoFit
-            if buffer_changed
-                axis_cond = ImGuiCond_Always
-            else
-                axis_cond = ImGuiCond_Once
-            end
             ImPlot.SetupAxis(ImPlot.ImAxis_X1, "")
             ImPlot.SetupAxis(ImPlot.ImAxis_Y1, "")
-            ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(buffer,1)), axis_cond)
-            ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(buffer,2)), axis_cond)
-            # ImPlot.PlotHeatmap(vec(actuator_nm),reverse(size(actuator_nm))...,-scale_amount[],scale_amount[]; label_fmt=C_NULL)
+
+            # Axis limits - use linked limits for synced plots
+            if !isnothing(sync_state)
+                # Initialize limits on first use or buffer change
+                if !sync_state.limits_initialized[] || buffer_changed
+                    sync_state.xlim_min[] = 0.0
+                    sync_state.xlim_max[] = float(size(buffer,1))
+                    sync_state.ylim_min[] = 0.0
+                    sync_state.ylim_max[] = float(size(buffer,2))
+                    sync_state.limits_initialized[] = true
+                end
+                # Link axes to shared Refs - ImPlot updates these directly on pan/zoom
+                ImPlot.SetupAxisLinks(ImPlot.ImAxis_X1, sync_state.xlim_min, sync_state.xlim_max)
+                ImPlot.SetupAxisLinks(ImPlot.ImAxis_Y1, sync_state.ylim_min, sync_state.ylim_max)
+            elseif buffer_changed
+                ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(buffer,1)), ImGuiCond_Always)
+                ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(buffer,2)), ImGuiCond_Always)
+            else
+                ImPlot.SetupAxisLimits(ImPlot.ImAxis_X1, 0.0, float(size(buffer,1)), ImGuiCond_Once)
+                ImPlot.SetupAxisLimits(ImPlot.ImAxis_Y1, 0.0, float(size(buffer,2)), ImGuiCond_Once)
+            end
             ImPlot.SetupFinish()
 
+            # Get active mask (synced or local)
+            active_mask = !isnothing(sync_state) ? sync_state.current_mask[] : local_current_mask
 
-            ImPlot.PushColormap(cmap)
+            # Mask overlay rendering - apply before plotting
+            # Blend mask into buffer display: masked pixels get pushed toward cmin (dark)
+            if !isnothing(active_mask) && mask_alpha[] > 0 && size(active_mask) == size(buffer)
+                blend = mask_alpha[]
+                cmin_val = cmin[]
+                @inbounds for i in eachindex(buffer)
+                    if !active_mask[i]
+                        buffer[i] = buffer[i] * (1 - blend) + cmin_val * blend
+                    end
+                end
+            end
+
+            ImPlot.PushColormap(cmap_ref[])
             ImPlot.PlotHeatmap(vec(buffer),reverse(size(buffer))...,cmin[],cmax[]; label_fmt=C_NULL, bounds_min=bounds_min, bounds_max=bounds_max)
             ImPlot.PopColormap()
 
@@ -514,7 +751,7 @@ function gui_panel(::Type{ImageViewer}, component_config; ischild=false, child_s
             ImPlot.EndPlot()
         end
         CImGui.SameLine();
-        ImPlot.ColormapScale("##cmap", cmin[], cmax[], ImVec2(80,h), "%g", ImPlot.ImPlotColormapScaleFlags_None, cmap);
+        ImPlot.ColormapScale("##cmap", cmin[], cmax[], ImVec2(20,h), "%g", ImPlot.ImPlotColormapScaleFlags_None, cmap_ref[]);
 
         CImGui.Text("Left drag colour bar for brightness/contrast.")
         CImGui.Text("Left drag image to pan. Scroll or right-drag image to zoom.")
@@ -565,6 +802,11 @@ function filebrowse(filepattern=r"\.fit|\.fits|\.fit.gz|\.fits.gz$";current_dire
         CImGui.SameLine()
         if CImGui.Button("Up")
             current_directory = joinpath(splitpath(current_directory)[1:max(1,end-1)]...)
+            current_listing = getdir(current_directory)
+            isdirs = isdir.(joinpath.(current_directory, current_listing))
+        end
+        CImGui.SameLine()
+        if CImGui.Button("Refresh")
             current_listing = getdir(current_directory)
             isdirs = isdir.(joinpath.(current_directory, current_listing))
         end
@@ -634,7 +876,7 @@ winsizecallback_c = @cfunction(winsizecallback4, Cvoid, (Ptr{LibCImGui.ImGuiSize
 function queryview(image, plotquery, slice_position)
     return @view image[
         max(1,round(Int,plotquery.xmin+1)):min(size(image,1), round(Int,plotquery.xmax)),
-        max(1,round(Int,size(image,2)-plotquery.ymax+1)):min(size(image,2), round(Int,size(image,2)-plotquery.ymin)),
+        max(1,round(Int,plotquery.ymin+1)):min(size(image,2), round(Int,plotquery.ymax)),
         slice_position...
     ]
 end

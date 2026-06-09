@@ -6,6 +6,7 @@ using Aeron
 @setup_workload begin
     @show Threads.nthreads()
     @compile_workload begin
+        println("Precompiling ... WARNING-- will fail if aeronmd is not running (`spiders-services start`)")
         spiderman(bg=false,precompilemode=true)
         # prevent dangling watcher task from hanging precompile
         Aeron.unwatchall()
@@ -15,5 +16,7 @@ using Aeron
         global loaded_config_toml
         loaded_config_toml = nothing
         empty!(active_components)
+        println("unwatched all")
     end
 end
+println("done precompile")

@@ -2,7 +2,6 @@ using Dates
 using Logging
 using Logging: Info, Debug, BelowMinLevel, Error
 using LoggingExtras: TeeLogger
-using Alert
 using ImageMagick
 using Images
 using FileIO
@@ -62,18 +61,6 @@ function Logging.handle_message(log::GuiLogger, level, message, _module, group, 
 end
 
 
-
-
-struct AlertLogger <: AbstractLogger end
-Logging.min_enabled_level(::AlertLogger) = Logging.Error
-Logging.shouldlog(::AlertLogger, args...) = true
-function Logging.handle_message(log::AlertLogger, level, message, _module, group, id, file, line; kwargs...)
-    # This causes security errors on NRC Windows 10 machines since it executes something in Powershell to show the desktop notification.
-    # @async alert("VENOM: "*string(message))
-    return
-end
-
-
 """
     screenshot()
 
@@ -124,7 +111,7 @@ function setup_logging()
     t = now()
     dir = joinpath(data_path, Dates.format(t, "Y-mm-dd"))
     fname = "VENOM.log"
-    mkpath(dir)
+    ensure_data_dir(dir)
     logfilename = joinpath(dir,fname)
     logfile = open(logfilename,append=true)
 
@@ -133,11 +120,10 @@ function setup_logging()
 
     file_logger = TextLogger(logfile)
     gui_logger = GuiLogger(15, 1024)
-    desktop_alert_logger = AlertLogger()
     default_logger = global_logger()
     
     
-    tee_logger = TeeLogger(default_logger, file_logger, gui_logger, desktop_alert_logger)
+    tee_logger = TeeLogger(default_logger, file_logger, gui_logger)
 
     global_logger(tee_logger)
 

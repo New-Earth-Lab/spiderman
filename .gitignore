@@ -1,0 +1,23 @@
+# Editor / backup files
+*~
+.*.swp
+*.bak
+*.bak-*
+
+# OS / editor cruft
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts / compiled objects
+build/
+*.o
+*.so
+
+# Large data products (not source)
+*.fits
+*.gif
+*.npy
+*.mat

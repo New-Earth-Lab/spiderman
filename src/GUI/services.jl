@@ -44,7 +44,7 @@ function gui_panel(::Type{ServicesPanel}, component_config)
                 parts = split(line)
                 isempty(parts) && continue
                 svc_name = replace(parts[1], ".service" => "")
-                if startswith(svc_name, "spiders-") && svc_name != "spiders-aeronmd"
+                if startswith(svc_name, "spiders-") && svc_name != "spiders-aeronmd" && !endswith(svc_name, ".d")
                     push!(services, svc_name)
                 end
             end

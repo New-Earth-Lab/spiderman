@@ -106,6 +106,12 @@ include("perf-mon.jl")
 include("integrator.jl")
 include("block.jl")
 include("archiver.jl")
+include("galil.jl")
+include("quick-controls.jl")
+include("services.jl")
+include("clockgen.jl")
+include("scc-masks.jl")
+include("sequence.jl")
 
 
 # Background for whole GUI
@@ -145,6 +151,14 @@ This allows us to precompile the startup workload (althrough the GUI does flash 
 This is not critical functionality.
 """
 function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
+
+    # check -- we need aeron running, so start it if not
+    proc = run(pipeline(ignorestatus(`systemctl is-active spiders-aeronmd.service`),stdout=devnull, stderr=devnull))
+    if proc.exitcode != 0
+        out = run(`sudo systemctl start spiders-aeronmd.service`)        
+        # TODO -- we might need to wait or block until aeronmd really starts
+        # to avoid trying to subscribe too soon
+    end
 
     # Option to launch the GUI on a background thread
     if bg
@@ -223,19 +237,26 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
     unsafe_store!(io.ConfigDragClickToInputText, true)
     # Draws a usual OS window border around each floating window:
     # unsafe_store!(io.ConfigViewportsNoDecoration, false)
-    # set style
+    unsafe_store!(io.ConfigDockingWithShift, true)
+    # set style (theme)
     igStyleColorsDark(C_NULL)
+    # igStyleColorsLight(C_NULL)
+
+    
+    # Enable turning DragXXX widgets into text input with a simple mouse click-release (without moving).
+    unsafe_store!(io.ConfigDragClickToInputText, true)
 
     # Specify a custom font
     fonts = unsafe_load(io.Fonts)
-    # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/NotoSansMono-Regular.ttf"), 30)
     # CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Sweet16mono.ttf"), 18)
     global font_default
     global font_small
     global font_large
-    font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 14)
-    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 8)
-    font_large = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 18)
+    global font_huge
+    font_default = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 9)#14)
+    font_small = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 6)
+    font_large = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 11)
+    font_huge = CImGui.AddFontFromFileTTF(fonts, joinpath(@__DIR__, "fonts/Inter-Regular.ttf"), 24)
 
 
     # init
@@ -273,7 +294,7 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
                 
                 # This should not be so difficult to set basic window properties
                 ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowTitle(igGetMainViewport(), convert(Ptr{Int8}, pointer("SPIDER-MAN")))
-                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(3840,2048))
+                ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowSize(igGetMainViewport(), ImVec2(1800,950))
                 # ImGuiGLFWBackend.ImGui_ImplGlfw_SetWindowPos(igGetMainViewport(), ImVec2(10,30))
             end
 
@@ -298,7 +319,7 @@ function spiderman(;bg=true,_launch_waiter_event=Event(),precompilemode=false)
             end
             # If precompiling, break out as soon as we hit the main
             # code paths.
-            if frame_i == 6 && precompilemode
+            if frame_i >= 3 && precompilemode
                 return
             end
             # Main normal drawing loop
@@ -442,6 +463,9 @@ function draw_loop(info)
             end
             CImGui.EndMenu()
         end
+
+        CImGui.SameLine(CImGui.GetWindowWidth()-500)
+        CImGui.Text("Fullscreen: ALT+F11")
 
         CImGui.SameLine(CImGui.GetWindowWidth()-100)
         fps = unsafe_load(CImGui.GetIO().Framerate)

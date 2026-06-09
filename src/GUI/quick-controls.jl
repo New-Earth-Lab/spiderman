@@ -10,6 +10,24 @@ const qc_selected_color = ImVec4(0.2f0, 0.7f0, 0.3f0, 1.0f0)  # Green for select
 const qc_normal_color = ImVec4(0.3f0, 0.3f0, 0.3f0, 1.0f0)    # Gray for normal
 const qc_inactive_color = ImVec4(0.5f0, 0.5f0, 0.2f0, 1.0f0)  # Yellow-ish for inactive/unknown
 
+# Colors + presets for the DM safety lease (dead man's switch) readout
+const qc_lease_ok_color = ImVec4(0.3f0, 0.8f0, 0.4f0, 1.0f0)       # Green: plenty of lease left
+const qc_lease_warn_color = ImVec4(0.95f0, 0.7f0, 0.2f0, 1.0f0)    # Amber: within the warning window
+const qc_lease_expired_color = ImVec4(0.9f0, 0.25f0, 0.25f0, 1.0f0) # Red: flattened by expiry
+const qc_lease_off_color = ImVec4(0.5f0, 0.5f0, 0.5f0, 1.0f0)      # Grey: disarmed
+const qc_lease_warn_s = 120.0  # matches the DM mixer's T-120s pre-expiry warning
+# Lease durations armed by the DM Mixer control buttons (seconds)
+const qc_lease_play_short_s = 900.0   # "Play 15m"
+const qc_lease_play_long_s  = 12*3600.0  # "Play 1h" and "Pause 1h"
+const qc_lease_extend_s     = 900.0   # "+15m" quick extend
+
+# Format seconds remaining as m:ss for the lease countdown.
+function format_lease_remaining(s)
+    s = max(0, round(Int, s))
+    m, sec = divrem(s, 60)
+    return string(m, ":", lpad(sec, 2, '0'))
+end
+
 # Sub-component for control loops (Play/Pause/Stop/Reset)
 mutable struct QCControlLoop
     const name::String
@@ -243,6 +261,8 @@ end
 function draw_control_loop_row(loop::QCControlLoop, idx::Int, label_width::Float32, state_column::Float32)
     inactive = time() - loop.last_heartbeat_time[] > 5.0
     state = get(loop.status, :state, nothing)
+    # A loop "supports" the safety lease if it reports lease_remaining_s in its status.
+    supports_lease = haskey(loop.status, :lease_remaining_s)
 
     # Label
     CImGui.Text(loop.display_name * ":")
@@ -254,31 +274,64 @@ function draw_control_loop_row(loop::QCControlLoop, idx::Int, label_width::Float
     end
     CImGui.SameLine()
 
-    # Play button - matches "Play", "Playing", etc.
+    # Play / Pause controls. Highlight green to reflect the current state.
     is_playing = state_matches(state, "play")
-    if is_playing
-        CImGui.PushStyleColor(ImGuiCol_Button, qc_selected_color)
-    end
-    if CImGui.SmallButton("Play##loop$idx")
-        sendevents(loop.aeron_event_pub; Play=nothing)
-    end
-    if is_playing
-        CImGui.PopStyleColor()
-    end
-    CImGui.SameLine()
-
-    # Pause button - matches "Pause", "Paused", etc.
     is_paused = state_matches(state, "pause")
-    if is_paused
-        CImGui.PushStyleColor(ImGuiCol_Button, qc_selected_color)
+
+    if supports_lease
+        # Lease-aware loop (DM Mixer): the Play/Pause buttons carry their own
+        # lease duration so the operator picks intent and fuse in one click.
+        if is_playing
+            CImGui.PushStyleColor(ImGuiCol_Button, qc_selected_color)
+        end
+        if CImGui.SmallButton("Play##loop$idx")
+            sendevents(loop.aeron_event_pub; Play=qc_lease_play_short_s)
+        end
+        CImGui.SameLine()
+#         if CImGui.SmallButton("Play 1h##loop$idx")
+#             sendevents(loop.aeron_event_pub; Play=qc_lease_play_long_s)
+#         end
+         if is_playing
+             CImGui.PopStyleColor()
+         end
+#         CImGui.SameLine()
+
+        # Pause AND arm a 1h lease atomically (for holding a shape through a long
+        # cal). The Lease event extends without changing state, so it stays Paused.
+        if is_paused
+            CImGui.PushStyleColor(ImGuiCol_Button, qc_selected_color)
+        end
+        if CImGui.SmallButton("Pause##loop$idx")
+            sendevents(loop.aeron_event_pub; Pause=nothing, Lease=qc_lease_play_long_s)
+        end
+        if is_paused
+            CImGui.PopStyleColor()
+        end
+        CImGui.SameLine()
+    else
+        # Standard loop: original payload-free Play / Pause.
+        if is_playing
+            CImGui.PushStyleColor(ImGuiCol_Button, qc_selected_color)
+        end
+        if CImGui.SmallButton("Play##loop$idx")
+            sendevents(loop.aeron_event_pub; Play=nothing)
+        end
+        if is_playing
+            CImGui.PopStyleColor()
+        end
+        CImGui.SameLine()
+
+        if is_paused
+            CImGui.PushStyleColor(ImGuiCol_Button, qc_selected_color)
+        end
+        if CImGui.SmallButton("Pause##loop$idx")
+            sendevents(loop.aeron_event_pub; Pause=nothing)
+        end
+        if is_paused
+            CImGui.PopStyleColor()
+        end
+        CImGui.SameLine()
     end
-    if CImGui.SmallButton("Pause##loop$idx")
-        sendevents(loop.aeron_event_pub; Pause=nothing)
-    end
-    if is_paused
-        CImGui.PopStyleColor()
-    end
-    CImGui.SameLine()
 
     # Stop button - matches "Stop", "Stopped", etc.
     is_stopped = state_matches(state, "stop")
@@ -307,6 +360,40 @@ function draw_control_loop_row(loop::QCControlLoop, idx::Int, label_width::Float
         CImGui.TextColored(qc_inactive_color, "$state (stale)")
     else
         CImGui.Text("$state")
+    end
+
+    # ----- Safety-lease (dead man's switch) sub-row, lease-aware loops only -----
+    if supports_lease
+        raw_remaining = get(loop.status, :lease_remaining_s, nothing)
+        remaining = raw_remaining isa Number ? Float64(raw_remaining) : nothing
+
+        CImGui.Indent(label_width)
+
+        # Quick extend first, so it sits at a fixed x. Adds 15 min to whatever is
+        # left, without changing Play/Pause state. Computed client-side so it never
+        # shortens a longer running lease.
+        if CImGui.SmallButton("+15m##lease$idx")
+            base = isnothing(remaining) ? 0.0 : max(0.0, remaining)
+            sendevents(loop.aeron_event_pub; Lease=base + qc_lease_extend_s)
+        end
+        CImGui.SameLine()
+
+        # Countdown / status after the button, colour-coded. Variable-width text
+        # grows rightward from here, so the button no longer jiggles.
+        if state_matches(state, "stop")
+            CImGui.TextColored(qc_lease_expired_color, "lease: FLATTENED (expired)")
+        elseif isnothing(remaining) || remaining <= 0
+            CImGui.TextColored(qc_lease_off_color, "lease: off")
+        elseif remaining <= qc_lease_warn_s
+            # Gentle pulse to draw the eye during the warning window.
+            a = 0.55f0 + 0.45f0 * Float32(abs(sin(time() * 3)))
+            col = ImVec4(qc_lease_warn_color.x, qc_lease_warn_color.y, qc_lease_warn_color.z, a)
+            CImGui.TextColored(col, "lease: " * format_lease_remaining(remaining))
+        else
+            CImGui.TextColored(qc_lease_ok_color, "lease: " * format_lease_remaining(remaining))
+        end
+
+        CImGui.Unindent(label_width)
     end
 end
 

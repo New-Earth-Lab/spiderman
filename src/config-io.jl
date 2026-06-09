@@ -51,6 +51,30 @@ function setconfig(subdict::Dict, keys_new_value...)
 end
 export setconfig
 
+"""
+    ensure_data_dir(dir)
+
+Create the per-day data directory if it doesn't already exist, making it
+world-writable (0o777) so other processes that write into the same directory
+under a different user (e.g. the archiver service running as `rtc`) can create
+files there regardless of who creates the directory first.
+
+`mkpath`'s `mode` is masked by the process umask, so launching the GUI
+interactively (default umask 022) would otherwise yield a 0o755 directory that
+locks out other users. We `chmod` explicitly to guarantee the permissions, and
+only touch a directory we just created so an existing one is left untouched.
+"""
+function ensure_data_dir(dir)
+    isdir(dir) && return dir
+    mkpath(dir, mode=0o777)
+    try
+        chmod(dir, 0o777)
+    catch err
+        @warn "Could not set permissions on data directory; other services may be unable to write here" dir exception=err
+    end
+    return dir
+end
+
 function writeconfig()
 
     # Come up with the file name
@@ -59,7 +83,7 @@ function writeconfig()
     dir = joinpath(data_path, Dates.format(t, "Y-mm-dd"))
     fname = Dates.format(t, "HH.MM.SS.s") * ".config.toml"
     @info "Writing current config file." dir fname
-    mkpath(dir)
+    ensure_data_dir(dir)
 
     converter(T::DataType) = string(T)
     converter(T::UnionAll) = string(T)
